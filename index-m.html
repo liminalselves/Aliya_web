@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <title>Aliya</title>
+    <link rel="stylesheet" href="css/base.css">
+    <link rel="stylesheet" href="css/index-m.css">
+    <link rel="stylesheet" href="css/loading-m.css">
+
+
+    <script src="js/loading-m.js"></script>
+    <script src="js/index-m.js"></script>
+
+
+    <!-- 音乐引用 -->
+    <audio src="audio/开关.wav" id="buttonbgm"></audio>
+    <audio loop src="audio/背景.wav" id="mainbgm"></audio>
+    <audio loop src="audio/RadioNoise.wav" id="noisebgm"></audio>
+    <audio loop src="audio/结局.wav" id="Litterbgm"></audio>
+</head>
+
+
+<body>
+<div class="content">
+
+    <div id="mainContent">
+        <div class="user-msg">
+
+    
+        </div>
+        <h1 class="cosmos">cosmos</h1>
+        <button class="launch-btn" onclick="gameStart()">连接</button>
+    </div>
+
+    <div id="animationContainer">
+        <canvas id="warpCanvas"></canvas>
+    </div>
+
+    <div class="setting">
+        <div class="overlay" id="overlay" onclick="closeModal()"></div>
+        <div class="modal" id="myModal">
+            <span class="close-btn"  onclick="closeModal()">&times;</span>
+            <button id="reset-btn">初始化连接</button>
+
+        </div>
+
+    </div>
+
+    <!-- 遮罩层 -->
+    <div class="menu-overlay"></div>
+    <!-- 菜单内容 -->
+    <div class="side-menu">
+        <div class="menu-content">
+            <div class="right">
+                <div class="right_1">
+                    <div class="screen">
+                        <li class="name">
+                            ALIYA
+                        </li>
+                        <li class="hrm">
+                            <div id="number">75</div>
+                            <canvas id="ecgCanvas"></canvas>
+                        </li>
+                        <li class="title">
+                            HEART RATE
+                        </li>
+                    </div>
+                    <div class="chart">
+                        <li>
+                            <div>
+                                <div class="o2"></div>
+                            </div>
+                        </li>
+                        <li>
+                            <div>
+                                <div class="h2o"></div>
+                            </div>
+
+                        </li>
+                        <li>
+                            <div>
+                                <div class="eng"></div>
+                            </div>
+
+                        </li>
+                    </div>
+
+
+                </div>
+                <div class="right_2">
+                    <div class="main">
+                        <div class="hrmb">
+
+                            <div class="bg">
+                                <div class="labels">
+                                    <span class="on-label ">off</span>
+                                    <span class="off-label active">on</span>
+                                </div>
+                                <label class="toggle-switch">
+                                    <input id="hrmbutton" type="checkbox" checked class="toggle-input">
+                                    <span class="slider"></span>
+                                </label>
+
+                            </div>
+                        </div>
+                        <div class="eogb">
+                            <div class="bg">
+                                <div class="labels">
+                                    <span class="on-label active">off</span>
+                                    <span class="off-label ">on</span>
+                                </div>
+                                <label class="toggle-switch">
+                                    <input type="checkbox" class="toggle-input">
+                                    <span class="slider"></span>
+                                </label>
+
+                            </div>
+                        </div>
+                        <div class="ehb">
+                            <div class="bg">
+                                <div class="labels">
+                                    <span class="on-label active">off</span>
+                                    <span class="off-label ">on</span>
+                                </div>
+                                <label class="toggle-switch">
+                                    <input type="checkbox" class="toggle-input">
+                                    <span class="slider"></span>
+                                </label>
+
+                            </div>
+                        </div>
+                        <div class="radiob">
+                            <div class="bg">
+                                <div class="labels">
+                                    <span class="on-label active">off</span>
+                                    <span class="off-label ">on</span>
+                                </div>
+                                <label class="toggle-switch">
+                                    <input id="radio-button" type="checkbox" class="toggle-input">
+                                    <span class="slider"></span>
+                                </label>
+
+                            </div>
+                        </div>
+                        <div class="radio">
+
+                            <div class="slider-container">
+                                <img src="img/radio.png" alt="">
+                                <div class="slider-track">
+
+                                    <div class="slider-thumb"></div>
+                                    <!-- 区间标记示例：0-100为低频区，100-200为中频区，200-300为高频区 -->
+                                </div>
+                            </div>
+
+
+
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+
+    <div class="new-page">
+        <div class="content_main">
+            <div class="head">
+
+                <li>
+                    <button >Settings</button>
+                </li>
+
+                <li>
+                    <button class="menu-toggle"><img src="img/展开.png" alt=""></button>
+                </li>
+
+            </div>
+            <div class="content">
+                <div class="content_1">
+                    <div class="left" id="aliyaText">
+
+                         <li class="aliya">你好</li>
+                        <li class="aliya">这里是aliya的对话框</li>
+                        <li class="player">你好</li>
+                        <li class="player">这里是player的对话框</li>
+                        <!-- 对话框 -->
+                    </div>
+                    <div class="right">
+                        
+                           
+                        <!-- 等待动画 -->
+                        <div class="right_3" id="playerText">
+                            <li>这里是选项位置</li>
+
+                            <div class="loader" id="waitImg">
+                                <div class="rotator">
+                                    <div class="ball"></div>
+                                </div>
+                                <div class="loader-img">
+                                    <img src="./img/等待时间图.png" alt="">
+                                </div>
+                            </div>
+    
+    
+                        </div>
+    
+                    </div>
+                </div>
+    
+            </div>
+    
+        </div>
+    
+    </div>
+
+   
+</div>
+   
+
+
+
+</body>
+
+</html>

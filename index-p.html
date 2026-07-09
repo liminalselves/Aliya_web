@@ -1,0 +1,383 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Aliya</title>
+    <link rel="stylesheet" href="css/base.css">
+    <link rel="stylesheet" href="css/index.css">
+    <link rel="stylesheet" href="css/loading.css">
+
+    <script src="js/loading.js"></script>
+    <script src="js/index.js"></script>
+
+    <!-- 音乐引用 -->
+    <audio src="audio/开关.wav" id="buttonbgm"></audio>
+    <audio loop src="audio/背景.wav" id="mainbgm"></audio>
+    <audio loop src="audio/RadioNoise.wav" id="noisebgm"></audio>
+    <audio loop src="audio/结局.wav" id="Litterbgm"></audio>
+</head>
+
+
+<body>
+
+    <div id="mainContent">
+        <div class="user-msg">
+    
+        </div>
+        <h1 class="cosmos">cosmos</h1>
+        <button class="launch-btn" >连接</button>
+    </div>
+
+    <div id="animationContainer">
+        <canvas id="warpCanvas"></canvas>
+    </div>
+
+    <!-- 遮罩层 -->
+    <div class="overlay" id="overlay">
+        <img class="zoomed-image" id="zoomedImage" src="" alt="放大图片">
+    </div>
+
+
+    <div class="setting">
+        <div class="overlay" id="overlay" onclick="closeModal()"></div>
+        <div class="modal" id="myModal">
+            <span class="close-btn"  onclick="closeModal()">&times;</span>
+            
+             <!-- <button id="setting" >调试</button> -->
+            
+            <button id="reset-btn">初始化连接</button>
+            
+        </div>
+
+    </div>
+
+    <div class="new-page">
+        <div class="content_main">
+            <div class="head">
+                <li>
+                    <button id="operationBtn">Operation</button>
+                </li>
+                <li>
+                    <button style="color: #646464; font-size: 3rem;">SOS</button>
+                </li>
+                <li style="color: #646464;">
+                    <button style="color: #646464; font-size: 3rem;">FCS</button>
+                </li>
+                <li>
+                    <button id="settingsBtn">Settings</button>
+                </li>
+                <li>
+                    <button>WARNING</button>
+                </li>
+            </div>
+            <div class="content">
+                <div class="content_1">
+                    <div class="left" id="aliyaText">
+                        <!-- 对话框：消息由 JS 动态从 API 加载 -->
+
+
+                    </div>
+                    <div class="right">
+                        <div class="right_1">
+                            <div class="screen">
+                                <li class="name">
+                                    ALIYA
+                                </li>
+                                <li class="hrm">
+                                    <div id="number">75</div>
+                                    <canvas id="ecgCanvas"></canvas>
+                                </li>
+                                <li class="title">
+                                    HEART RATE
+                                </li>
+                            </div>
+                            <div class="chart">
+                                <li>
+                                    <div>
+                                        <div class="o2"></div>
+                                    </div>
+                                </li>
+                                <li>
+                                    <div>
+                                        <div class="h2o"></div>
+                                    </div>
+    
+                                </li>
+                                <li>
+                                    <div>
+                                        <div class="eng"></div>
+                                    </div>
+    
+                                </li>
+                            </div>
+    
+    
+                        </div>
+                        <div class="right_2">
+                            <div class="main">
+                                <div class="hrmb">
+    
+                                    <div class="bg">
+                                        <div class="labels">
+                                            <span class="on-label ">off</span>
+                                            <span class="off-label active">on</span>
+                                        </div>
+                                        <label class="toggle-switch">
+                                            <input id="hrmbutton" type="checkbox" checked class="toggle-input">
+                                            <span class="slider"></span>
+                                        </label>
+    
+                                    </div>
+                                </div>
+                                <div class="eogb">
+                                    <div class="bg">
+                                        <div class="labels">
+                                            <span class="on-label active">off</span>
+                                            <span class="off-label ">on</span>
+                                        </div>
+                                        <label class="toggle-switch">
+                                            <input type="checkbox" class="toggle-input">
+                                            <span class="slider"></span>
+                                        </label>
+    
+                                    </div>
+                                </div>
+                                <div class="ehb">
+                                    <div class="bg">
+                                        <div class="labels">
+                                            <span class="on-label active">off</span>
+                                            <span class="off-label ">on</span>
+                                        </div>
+                                        <label class="toggle-switch">
+                                            <input type="checkbox" class="toggle-input">
+                                            <span class="slider"></span>
+                                        </label>
+    
+                                    </div>
+                                </div>
+                                <div class="msgb">
+                                    <div class="msgb_l">
+                                        COSMOS
+                                        <br>
+                                        CONTROL
+                                        <br>
+                                        SYSEM
+                                    </div>
+                                    <div class="msgb_r" style="font-size: 1.3rem;">
+                                        RADIO
+                                    </div>
+    
+    
+                                </div>
+                                <div class="radiob">
+                                    <div class="bg">
+                                        <div class="labels">
+                                            <span class="on-label active">off</span>
+                                            <span class="off-label ">on</span>
+                                        </div>
+                                        <label class="toggle-switch">
+                                            <input id="radio-button" type="checkbox" class="toggle-input">
+                                            <span class="slider"></span>
+                                        </label>
+    
+                                    </div>
+                                </div>
+                                <div class="radio">
+    
+                                    <div class="slider-container">
+                                        <img src="img/radio.png" alt="">
+                                        <div class="slider-track">
+    
+                                            <div class="slider-thumb"></div>
+                                            <!-- 区间标记示例：0-100为低频区，100-200为中频区，200-300为高频区 -->
+                                        </div>
+                                    </div>
+    
+    
+    
+                                </div>
+                            </div>
+                        </div>
+                        <!-- 等待动画 -->
+           
+    
+                        <div class="right_3" id="playerText">
+
+                            <!-- <li>这里是选项位置</li> -->
+
+                            <!-- 玩家输入区域 -->
+                            <div class="player-input-area" id="playerInputArea">
+                                <textarea id="playerInput" placeholder="输入消息..."></textarea>
+                                <button id="sendBtn">发送</button>
+                            </div>
+
+                            <div class="loader" id="waitImg">
+                                <div class="rotator">
+                                    <div class="ball"></div>
+                                </div>
+                                <div class="loader-img">
+                                    <img src="./img/等待时间图.png" alt="">
+                                </div>
+                            </div>
+
+
+                        </div>
+    
+                    </div>
+                </div>
+    
+            </div>
+    
+        </div>
+    
+    </div>
+
+   
+
+
+
+    <!-- Operation 面板 -->
+    <div class="op-overlay" id="opOverlay">
+        <div class="op-panel" id="opPanel">
+            <span class="op-close-btn" id="opCloseBtn">&times;</span>
+            <h2 class="op-title">会话管理</h2>
+
+            <!-- 对话列表 -->
+            <div class="op-section">
+                <label class="op-label">对话列表</label>
+                <div class="op-session-list" id="opSessionList">
+                </div>
+            </div>
+
+            <!-- 图片配置 -->
+            <div class="op-section">
+                <label class="op-label">图片配置</label>
+                <div class="op-config-grid">
+                    <div class="op-config-item">
+                        <span>尺寸</span>
+                        <select id="cfgImgSize">
+                            <option value="landscape">横向</option>
+                            <option value="portrait">纵向</option>
+                            <option value="square">方形</option>
+                        </select>
+                    </div>
+                    <div class="op-config-item">
+                        <span>采样步数</span>
+                        <input type="number" id="cfgImgSteps" min="1" max="100" value="28">
+                    </div>
+                    <div class="op-config-item">
+                        <span>引导强度</span>
+                        <input type="number" id="cfgImgScale" min="0" max="20" step="0.5" value="5">
+                    </div>
+                    <div class="op-config-item">
+                        <span>CFG重缩放</span>
+                        <input type="number" id="cfgImgCfgRescale" min="0" max="1" step="0.1" value="0">
+                    </div>
+                    <div class="op-config-item">
+                        <span>采样器</span>
+                        <select id="cfgImgSampler">
+                            <option value="k_euler_ancestral">k_euler_ancestral</option>
+                            <option value="k_euler">k_euler</option>
+                            <option value="k_dpm_2_ancestral">k_dpm_2_ancestral</option>
+                            <option value="k_dpmpp_2s_ancestral">k_dpmpp_2s_ancestral</option>
+                            <option value="k_dpmpp_2m">k_dpmpp_2m</option>
+                        </select>
+                    </div>
+                    <div class="op-config-item">
+                        <span>噪声调度</span>
+                        <select id="cfgImgNoiseSchedule">
+                            <option value="karras">karras</option>
+                            <option value="exponential">exponential</option>
+                            <option value="simple">simple</option>
+                        </select>
+                    </div>
+                    <div class="op-config-item">
+                        <span>画风预设</span>
+                        <select id="cfgImgArtistPresetId">
+                            <option value="default-anime">二次元插画</option>
+                            <option value="warm-game-portrait">暖色系游戏立绘</option>
+                            <option value="soft-fantasy">轻柔幻想风</option>
+                            <option value="clear-sweet">清透甜绘风</option>
+                            <option value="light-thick-paint">轻厚涂二次元</option>
+                            <option value="line-manga">日系线稿漫画</option>
+                        </select>
+                    </div>
+                    <div class="op-config-item">
+                        <span>图片模型ID</span>
+                        <input type="text" id="cfgAgentImageModelId" value="aob0wkxmi3">
+                    </div>
+                </div>
+            </div>
+
+            <!-- 文风配置 -->
+            <div class="op-section">
+                <label class="op-label">文风配置</label>
+                <div class="op-config-item op-style-select-wrapper">
+                    <span>文风</span>
+                    <div class="op-custom-select" id="opStyleSelect">
+                        <div class="op-select-trigger" id="opStyleTrigger">
+                            <span class="op-select-text" id="opStyleText">加载中...</span>
+                            <span class="op-select-arrow">&#9662;</span>
+                        </div>
+                        <div class="op-select-dropdown" id="opStyleDropdown"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 操作按钮 -->
+            <div class="op-actions">
+                <button id="opCreateBtn" class="op-btn op-btn-create">创建会话</button>
+                <button id="opUpdateBtn" class="op-btn op-btn-update">更新配置</button>
+            </div>
+            <div class="op-status" id="opStatus"></div>
+        </div>
+    </div>
+
+    <!-- 设置面板 -->
+    <div class="settings-overlay" id="settingsOverlay">
+        <div class="settings-panel" id="settingsPanel">
+            <span class="op-close-btn" id="settingsCloseBtn">&times;</span>
+            <h2 class="op-title">设置</h2>
+
+            <div class="op-section">
+                <label class="op-label">鉴权 Token</label>
+                <input type="text" id="segToken" class="settings-input"
+                       placeholder="Misskey API Token">
+            </div>
+
+            <div class="op-section">
+                <label class="op-label">分段回复</label>
+                <label class="settings-toggle-row">
+                    <input type="checkbox" id="segToggle">
+                    <span>启用分段回复</span>
+                </label>
+            </div>
+
+            <div class="op-section">
+                <label class="op-label">分割正则表达式</label>
+                <input type="text" id="segRegex" class="settings-input"
+                       placeholder="[。！？!?\n]" value="[。！？!?\n]">
+            </div>
+
+            <div class="op-section">
+                <label class="op-label">每条消息延迟（毫秒）</label>
+                <div class="settings-delay-row">
+                    <input type="number" id="segDelayMin" class="settings-input" value="800" min="0">
+                    <span>~</span>
+                    <input type="number" id="segDelayMax" class="settings-input" value="2000" min="0">
+                </div>
+            </div>
+
+            <div class="op-actions">
+                <button id="settingsSaveBtn" class="op-btn op-btn-create">保存</button>
+            </div>
+            <div class="op-status" id="settingsStatus"></div>
+        </div>
+    </div>
+
+
+</body>
+
+</html>

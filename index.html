@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Document</title>
+</head>
+<body>
+    
+</body>
+<script>
+    // 设备检测函数
+function isMobileDevice() {
+  const ua = navigator.userAgent.toLowerCase();
+  const mobileKeywords = [
+    'android', 'iphone', 'ipod', 'ipad', 'windows phone', 'mobile'
+  ];
+  const isMobileUA = mobileKeywords.some(keyword => ua.includes(keyword));
+
+  // 2. 屏幕尺寸检测
+  const screenWidth = window.screen.width;
+  const isSmallScreen = screenWidth < 768 || (window.devicePixelRatio >= 2 && screenWidth < 1024);
+
+  // 3. 触摸事件支持检测
+  const isTouchDevice = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+
+  return isMobileUA || isSmallScreen || isTouchDevice;
+}
+
+
+if (isMobileDevice()) {
+  // 跳转移动版
+  window.location.href = '/index-m.html';
+} else {
+  // 跳转PC版
+  window.location.href = '/index-p.html';
+}
+</script>
+</html>
