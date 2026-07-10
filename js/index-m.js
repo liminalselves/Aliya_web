@@ -562,7 +562,7 @@ document.addEventListener("DOMContentLoaded", function (event) {
     }
 
     // =========================================================
-    var API_BASE = "http://127.0.0.1:4000";
+    var API_BASE = (window.ALIYA_API_BASE || "").replace(/\/+$/, "");
     var mskToken = "";
 
     function loadToken() {
