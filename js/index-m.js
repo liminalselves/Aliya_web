@@ -145,6 +145,7 @@ document.addEventListener("DOMContentLoaded", function (event) {
     var Litterbgm = document.getElementById("Litterbgm")
     const radioButton = document.querySelector('#radio-button');
     const backgroundMusicStorageKey = "aliya_background_music";
+    const playModeStorageKey = "aliya_background_music_mode";
     const backgroundMusicSources = {
         letter: "audio/music/letter.mp3",
         aliya: "audio/music/aliya.mp3",
@@ -154,7 +155,9 @@ document.addEventListener("DOMContentLoaded", function (event) {
         "stars-annihilation": "audio/music/stars-annihilation.mp3",
         "tranquil-repose": "audio/music/tranquil-repose.mp3"
     };
+    var backgroundMusicKeys = Object.keys(backgroundMusicSources);
     var activeBackgroundMusic = "letter";
+    var activePlayMode = "single";
 
     function safePlay(audio) {
         if (!audio) return;
@@ -180,6 +183,7 @@ document.addEventListener("DOMContentLoaded", function (event) {
                 mainbgm.src = nextSource;
                 mainbgm.load();
             }
+            mainbgm.loop = activePlayMode === "single";
             if (playNow && !radioButton.checked) safePlay(mainbgm);
         } else {
             mainbgm.removeAttribute("src");
@@ -191,7 +195,39 @@ document.addEventListener("DOMContentLoaded", function (event) {
         if (activeBackgroundMusic !== "none") safePlay(mainbgm);
     }
 
+    function applyPlayMode(mode) {
+        activePlayMode = (mode === "single" || mode === "random" || mode === "list") ? mode : "single";
+        localStorage.setItem(playModeStorageKey, activePlayMode);
+        if (mainbgm) {
+            mainbgm.loop = activePlayMode === "single";
+        }
+    }
+
+    function playNextInList() {
+        var currentIdx = backgroundMusicKeys.indexOf(activeBackgroundMusic);
+        var nextIdx = currentIdx === -1 || currentIdx >= backgroundMusicKeys.length - 1 ? 0 : currentIdx + 1;
+        var nextKey = backgroundMusicKeys[nextIdx];
+        applyBackgroundMusic(nextKey, true);
+    }
+
+    function playNextRandom() {
+        var nextKey = backgroundMusicKeys[Math.floor(Math.random() * backgroundMusicKeys.length)];
+        applyBackgroundMusic(nextKey, true);
+    }
+
+    function handleMusicEnded() {
+        if (activeBackgroundMusic === "none") return;
+        if (activePlayMode === "random") playNextRandom();
+        else if (activePlayMode === "list") playNextInList();
+    }
+
+    if (mainbgm) {
+        mainbgm.addEventListener("ended", handleMusicEnded);
+    }
+
     var savedBackgroundMusic = localStorage.getItem(backgroundMusicStorageKey) || "letter";
+    var savedPlayMode = localStorage.getItem(playModeStorageKey) || "single";
+    applyPlayMode(savedPlayMode);
     applyBackgroundMusic(savedBackgroundMusic, false);
 
     function setRem() {
@@ -247,20 +283,13 @@ document.addEventListener("DOMContentLoaded", function (event) {
     ];
     let currentIndex = 0;
     let currentPos = 0;
-    const ECG_CYCLE_DURATION_MS = 1000;
+    const speed = 5;
     const tailPoints = [];
     const tailMaxLength = 60;
     let isLooping = false;
-    const GRADIENT_FALLOFF = 0.03;
+    const GRADIENT_FALLOFF = 0.03;  
     const reduceMotionQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
     let ecgAnimationFrame = null;
-    let ecgLastTimestamp = null;
-    let ecgTotalLength = 0;
-    for (let pointIndex = 0; pointIndex < ecgPoints.length - 1; pointIndex++) {
-        const start = ecgPoints[pointIndex];
-        const end = ecgPoints[pointIndex + 1];
-        ecgTotalLength += Math.sqrt(Math.pow(end.x - start.x, 2) + Math.pow(end.y - start.y, 2));
-    }
 
     function ecgShouldAnimate() {
         return !document.hidden && !reduceMotionQuery.matches;
@@ -315,33 +344,10 @@ document.addEventListener("DOMContentLoaded", function (event) {
         });
         ctx.globalCompositeOperation = 'source-over';
     }
-
-    function advanceEcgPosition(distance) {
-        while (distance > 0) {
-            const startPoint = ecgPoints[currentIndex];
-            const endPoint = ecgPoints[currentIndex + 1];
-            const segmentLength = Math.sqrt(Math.pow(endPoint.x - startPoint.x, 2) + Math.pow(endPoint.y - startPoint.y, 2));
-            const remaining = segmentLength - currentPos;
-            if (distance < remaining) {
-                currentPos += distance;
-                return;
-            }
-            distance -= remaining;
-            currentPos = 0;
-            currentIndex = (currentIndex + 1) % (ecgPoints.length - 1);
-            if (currentIndex === 0) tailPoints.push(null);
-        }
-    }
-
-    function draw(timestamp) {
+    
+    function draw() {
         ecgAnimationFrame = null;
-        if (!ecgShouldAnimate()) {
-            ecgLastTimestamp = null;
-            return;
-        }
-        if (ecgLastTimestamp === null) ecgLastTimestamp = timestamp;
-        const elapsedMs = Math.min(Math.max(timestamp - ecgLastTimestamp, 0), 100);
-        ecgLastTimestamp = timestamp;
+        if (!ecgShouldAnimate()) return;
         ecgCtxs.forEach(function(ctx) { ctx.clearRect(0, 0, 260, 200); });
         const startPoint = ecgPoints[currentIndex];
         const endPoint = ecgPoints[currentIndex + 1];
@@ -356,7 +362,12 @@ document.addEventListener("DOMContentLoaded", function (event) {
         tailPoints.push({ x: x, y: y });
         if (tailPoints.length > tailMaxLength) tailPoints.shift();
         ecgCtxs.forEach(function(c) { drawTrailWithGradient(c); c.beginPath(); c.arc(x, y, 1, 0, Math.PI * 2); c.fillStyle = '#fff'; c.fill(); });
-        advanceEcgPosition(ecgTotalLength * elapsedMs / ECG_CYCLE_DURATION_MS);
+        currentPos += speed;
+        if (currentPos >= Math.sqrt(dx * dx + dy * dy)) {
+            currentPos = 0;
+            currentIndex = (currentIndex + 1) % (ecgPoints.length - 1);
+            if (currentIndex === 0) tailPoints.push(null);
+        }
         ecgAnimationFrame = requestAnimationFrame(draw);
     }
     document.addEventListener("visibilitychange", onEcgMotionStateChange);
@@ -587,9 +598,10 @@ document.addEventListener("DOMContentLoaded", function (event) {
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify(payload)
             });
-            var data = await res.json();
-            if (res.ok) return data.url || data.thumbnailUrl;
-            console.warn("占位图生成失败：", data.errorMessage || data.errorCode || "未知错误");
+            if (res.ok) {
+                var data = await res.json();
+                return data.url || data.thumbnailUrl;
+            }
         } catch (e) {
             console.error("获取占位图失败", e);
         }
@@ -611,15 +623,6 @@ document.addEventListener("DOMContentLoaded", function (event) {
             }
         }
         return { text: cleanText.trim(), images: images };
-    }
-
-    function timelineAttachmentImageUrls(file) {
-        if (!file || typeof file !== "object") return [];
-        var type = String(file.type || "").toLowerCase();
-        var url = file.url || file.thumbnailUrl;
-        // MSK 的 timeline 可能省略 type；这种情况下仍以图片 URL 作为兼容回退。
-        if (!url || (type && type.indexOf("image/") !== 0)) return [];
-        return [url];
     }
 
     // 心率指令解析：[[heart_rate:min,max]]，允许空格
@@ -860,30 +863,9 @@ document.addEventListener("DOMContentLoaded", function (event) {
     }
 
     var playerInput = document.getElementById("playerInput");
-    var imageInput = document.getElementById("imageInput");
-    var imageUploadBtn = document.querySelector(".image-upload-btn");
-    var mediaUploadLabel = imageUploadBtn && imageUploadBtn.querySelector(".media-upload-label");
-    var mediaUploadMark = imageUploadBtn && imageUploadBtn.querySelector(".media-upload-mark");
     var sendBtn = document.getElementById("sendBtn");
     var playerInputArea = document.getElementById("playerInputArea");
-    var playerText = document.getElementById("playerText");
     var waitImg = document.getElementById("waitImg");
-    var waitText = document.getElementById("waitText");
-    var chatLoadingState = document.getElementById("chatLoadingState");
-    var chatLoadingText = document.getElementById("chatLoadingText");
-
-    function syncMediaUploadState() {
-        if (!imageUploadBtn || !imageInput) return;
-        var file = imageInput.files && imageInput.files[0];
-        var hasFile = !!file;
-        imageUploadBtn.classList.toggle("has-file", hasFile);
-        imageUploadBtn.title = hasFile ? "已选择：" + file.name + "（点击更换）" : "添加图片";
-        imageUploadBtn.setAttribute("aria-label", hasFile ? "已选择图片 " + file.name + "，点击更换" : "添加图片");
-        if (mediaUploadLabel) mediaUploadLabel.textContent = hasFile ? "READY" : "MEDIA";
-        if (mediaUploadMark) mediaUploadMark.textContent = hasFile ? "✓" : "+";
-    }
-
-    if (imageInput) imageInput.addEventListener("change", syncMediaUploadState);
     var lastMsgId = 0;
     var isWaitingReply = false;
     var pollTimer = null;
@@ -892,15 +874,8 @@ document.addEventListener("DOMContentLoaded", function (event) {
     var noMoreHistory = false;
     var earliestMsgId = null;
     var recentlySentSet = {}; 
-    var recentlyReceivedSet = {};
-    var isAtBottomFlag = true;
-    var isTimelineLoading = false;
-    var timelineLoadPromise = null;
-    var chatLoadingNoticeTimer = null;
-    var timelineSnapshotSignature = "";
-    var timelineSnapshotMessageIds = {};
-    var timelineRenderedItems = [];
-    var timelineRenderedSessionId = null;
+    var recentlyReceivedSet = {}; 
+    var isAtBottomFlag = true; 
 
     function stopPolling() {
         if (pollTimer) {
@@ -941,7 +916,7 @@ document.addEventListener("DOMContentLoaded", function (event) {
     });
     var scrollObserver = new MutationObserver(function () {
         // 加载历史消息期间跳过，避免与滚动位置补偿争抢
-        if (isLoadingMore || isTimelineLoading) return;
+        if (isLoadingMore) return;
         if (isAtBottomFlag) {
             requestAnimationFrame(() => { aliyaText.scrollTop = aliyaText.scrollHeight; });
         }
@@ -952,7 +927,6 @@ document.addEventListener("DOMContentLoaded", function (event) {
     var segConfig = {
         enabled: false
     };
-    var segmentPlaybackTimers = [];
 
     function segConfigStorageKey() {
         return currentSessionId ? ("aliya_seg_config:" + currentSessionId) : "aliya_seg_config";
@@ -1129,27 +1103,13 @@ document.addEventListener("DOMContentLoaded", function (event) {
         return Math.max(1000, Math.min(3000, 1000 + visibleChars * 20));
     }
 
-    function clearSegmentPlaybackTimers() {
-        segmentPlaybackTimers.forEach(function(timerId) { clearTimeout(timerId); });
-        segmentPlaybackTimers = [];
-    }
-
-    function scheduleSegmentPlayback(callback, delay) {
-        var timerId = setTimeout(function() {
-            var index = segmentPlaybackTimers.indexOf(timerId);
-            if (index !== -1) segmentPlaybackTimers.splice(index, 1);
-            callback();
-        }, delay);
-        segmentPlaybackTimers.push(timerId);
-    }
-
     // 统一的 aliya 消息渲染入口（处理分段逻辑）
     // immediate=true 时即时渲染各分段（用于历史消息），不应用延迟
-    function renderAliyaMessage(cleanContent, images, immediate, messageMeta) {
+    function renderAliyaMessage(cleanContent, images, immediate) {
         if (segConfig.enabled && cleanContent) {
             var segments = splitAssistantMessageIntoSegments(cleanContent);
             if (segments.length <= 1) {
-                appendMessage("aliya", cleanContent, messageMeta && messageMeta.timestamp, images, null, messageMeta);
+                appendMessage("aliya", cleanContent, null, images);
                 return;
             }
             var elapsed = 0;
@@ -1159,7 +1119,7 @@ document.addEventListener("DOMContentLoaded", function (event) {
                     return;
                 }
                 elapsed += agentSegmentDelayMs(seg);
-                scheduleSegmentPlayback(function() {
+                setTimeout(function() {
                     appendMessage("aliya", seg);
                 }, elapsed);
             });
@@ -1171,20 +1131,15 @@ document.addEventListener("DOMContentLoaded", function (event) {
                     });
                 } else {
                     var imgDelay = elapsed + 300;
-                    scheduleSegmentPlayback(function() {
+                    setTimeout(function() {
                         images.forEach(function(imgUrl) {
                             appendMessage("aliya", null, null, [imgUrl]);
                         });
                     }, imgDelay);
                 }
             }
-            if (messageMeta && (messageMeta.timestamp || messageMeta.proactiveScheduleControlFailed || (messageMeta.proactiveScheduleActionTypes || []).length)) {
-                var metaDelay = immediate ? 0 : elapsed + (images && images.length > 0 ? 300 : 0);
-                if (metaDelay > 0) scheduleSegmentPlayback(function() { appendMessageMeta("aliya", messageMeta); }, metaDelay);
-                else appendMessageMeta("aliya", messageMeta);
-            }
         } else {
-            appendMessage("aliya", cleanContent, messageMeta && messageMeta.timestamp, images, null, messageMeta);
+            appendMessage("aliya", cleanContent, null, images);
         }
     }
 
@@ -1199,124 +1154,8 @@ document.addEventListener("DOMContentLoaded", function (event) {
         li.appendChild(body);
     }
 
-    function parseTimelineDate(value) {
-        if (!value) return null;
-        var date = new Date(value);
-        return Number.isNaN(date.getTime()) ? null : date;
-    }
-
-    function formatTimelineDate(value) {
-        var date = parseTimelineDate(value);
-        if (!date) return "";
-        return new Intl.DateTimeFormat("zh-CN", {
-            timeZone: "Asia/Shanghai",
-            month: "numeric",
-            day: "numeric"
-        }).format(date);
-    }
-
-    function timelineDayKey(value) {
-        var date = parseTimelineDate(value);
-        if (!date) return "";
-        return new Intl.DateTimeFormat("en-CA", {
-            timeZone: "Asia/Shanghai",
-            year: "numeric",
-            month: "2-digit",
-            day: "2-digit"
-        }).format(date);
-    }
-
-    function shouldRenderTimelineDateDivider(previousTimestamp, nextTimestamp) {
-        var previousDay = timelineDayKey(previousTimestamp);
-        var nextDay = timelineDayKey(nextTimestamp);
-        return !!previousDay && !!nextDay && previousDay !== nextDay;
-    }
-
-    function appendTimelineDateDivider(previousTimestamp, nextTimestamp) {
-        var previousText = formatTimelineDate(previousTimestamp);
-        var nextText = formatTimelineDate(nextTimestamp);
-        if (!previousText || !nextText) return;
-        var li = document.createElement("li");
-        li.className = "timeline-date-divider";
-        li.setAttribute("role", "separator");
-        li.setAttribute("aria-label", "消息日期从 " + previousText + " 到 " + nextText);
-        li.innerHTML = '<span>↑ ' + previousText + '</span><span class="timeline-date-divider-line" aria-hidden="true"></span><span>' + nextText + ' ↓</span>';
-        aliyaText.appendChild(li);
-    }
-
-    function appendLiveTimelineDateDivider(timestamp) {
-        if (timelineRenderedSessionId !== currentSessionId || !timelineRenderedItems.length) return;
-        var previous = timelineRenderedItems[timelineRenderedItems.length - 1];
-        if (previous && shouldRenderTimelineDateDivider(previous.timestamp, timestamp)) {
-            appendTimelineDateDivider(previous.timestamp, timestamp);
-        }
-    }
-
-    function formatRelativeMessageTime(value) {
-        var date = parseTimelineDate(value);
-        if (!date) return "";
-        var delta = Math.max(0, Date.now() - date.getTime());
-        var minute = 60 * 1000;
-        var hour = 60 * minute;
-        var day = 24 * hour;
-        if (delta < minute) return "刚刚";
-        if (delta < hour) return Math.floor(delta / minute) + "分钟前";
-        if (delta < day) return Math.floor(delta / hour) + "小时前";
-        if (delta < 7 * day) return Math.floor(delta / day) + "天前";
-        if (delta < 30 * day) return Math.floor(delta / (7 * day)) + "周前";
-        return new Intl.DateTimeFormat("zh-CN", {
-            timeZone: "Asia/Shanghai",
-            year: "numeric",
-            month: "2-digit",
-            day: "2-digit",
-            hour: "2-digit",
-            minute: "2-digit",
-            hour12: false
-        }).format(date).replace(/\//g, "-");
-    }
-
-    function formatScheduleActionSummary(actionTypes, controlFailed) {
-        var labels = { create: "添加", update: "修改", cancel: "删除" };
-        var actions = Array.isArray(actionTypes) ? actionTypes.map(function(type) { return labels[type]; }).filter(Boolean) : [];
-        if (!actions.length && !controlFailed) return "";
-        if (!actions.length) return "日程消息操作 · 操作失败";
-        return (controlFailed ? "尝试日程消息操作：" : "日程消息操作：") + actions.join("、") + (controlFailed ? " · 操作失败" : "");
-    }
-
-    function appendMessageMeta(role, messageMeta) {
-        var timestamp = messageMeta && messageMeta.timestamp;
-        var scheduleSummary = formatScheduleActionSummary(
-            messageMeta && messageMeta.proactiveScheduleActionTypes,
-            messageMeta && messageMeta.proactiveScheduleControlFailed
-        );
-        var relativeTime = formatRelativeMessageTime(timestamp);
-        if (!scheduleSummary && !relativeTime) return;
-
-        var li = document.createElement("li");
-        li.className = "message-meta " + role;
-        if (scheduleSummary) {
-            var schedule = document.createElement("span");
-            schedule.className = "message-schedule-summary" + (messageMeta.proactiveScheduleControlFailed ? " is-failed" : "");
-            schedule.textContent = "◷ " + scheduleSummary;
-            li.appendChild(schedule);
-        }
-        if (relativeTime) {
-            var time = document.createElement("time");
-            time.className = "message-time";
-            time.dateTime = timestamp;
-            time.title = new Intl.DateTimeFormat("zh-CN", {
-                timeZone: "Asia/Shanghai",
-                year: "numeric", month: "2-digit", day: "2-digit",
-                hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false
-            }).format(parseTimelineDate(timestamp));
-            time.textContent = "◷ " + relativeTime;
-            li.appendChild(time);
-        }
-        aliyaText.appendChild(li);
-    }
-
     // 【修复】图片渲染为独立卡片
-    function appendMessage(role, content, msgTimestamp, images, msgId, messageMeta) {
+    function appendMessage(role, content, msgTimestamp, images, msgId) {
         if (content !== null && content !== undefined && String(content) !== "") {
             var li = document.createElement("li");
             li.className = role;
@@ -1339,9 +1178,6 @@ document.addEventListener("DOMContentLoaded", function (event) {
                 aliyaText.appendChild(li);
             });
         }
-        if (messageMeta || msgTimestamp) {
-            appendMessageMeta(role, Object.assign({}, messageMeta || {}, { timestamp: msgTimestamp || (messageMeta && messageMeta.timestamp) || null }));
-        }
     }
 
     function dedupMessages(msgs) {
@@ -1357,211 +1193,68 @@ document.addEventListener("DOMContentLoaded", function (event) {
 
     // prependMessages 已移除，timeline 一次性返回全部消息
 
-    function setWaiting(isWaiting, message) {
+    function setWaiting(isWaiting) {
         isWaitingReply = isWaiting;
-        if (waitText && message) waitText.textContent = message;
-        if (waitImg && message) waitImg.setAttribute("aria-label", message);
-        if (waitImg) waitImg.hidden = !isWaiting;
-        if (playerInputArea) {
-            playerInputArea.classList.toggle("is-waiting", isWaiting);
-            playerInputArea.toggleAttribute("hidden", isWaiting);
-        }
-        if (playerText) {
-            playerText.classList.toggle("is-waiting", isWaiting);
-            playerText.setAttribute("aria-busy", isWaiting ? "true" : "false");
-        }
-        [playerInput, imageInput, sendBtn].forEach(function(element) {
-            if (element) element.disabled = isWaiting;
-        });
-        if (sendBtn) sendBtn.setAttribute("aria-busy", isWaiting ? "true" : "false");
-    }
-
-    function setChatLoading(isLoading, message, placement) {
-        if (chatLoadingNoticeTimer) {
-            clearTimeout(chatLoadingNoticeTimer);
-            chatLoadingNoticeTimer = null;
-        }
-        if (chatLoadingText && message) chatLoadingText.textContent = message;
-        if (aliyaText) aliyaText.classList.toggle("is-refreshing", isLoading);
-        if (!chatLoadingState) return;
-        chatLoadingState.hidden = !isLoading;
-        chatLoadingState.dataset.placement = placement || "center";
-        if (!isLoading) chatLoadingState.removeAttribute("data-state");
-    }
-
-    function showChatLoadingError(message) {
-        if (!chatLoadingState) return;
-        setChatLoading(true, message || "加载聊天记录失败", "center");
-        chatLoadingState.dataset.state = "error";
-        chatLoadingNoticeTimer = setTimeout(function() {
-            if (!isTimelineLoading) setChatLoading(false);
-        }, 3200);
-    }
-
-    function buildTimelineSnapshotSignature(messages) {
-        return JSON.stringify({
-            sessionId: currentSessionId || "",
-            messages: messages.map(function(msg) {
-                var file = msg && msg.file;
-                return [
-                    msg && msg.id,
-                    msg && msg.role,
-                    msg && msg.content,
-                    msg && msg.createdAt,
-                    file && file.id,
-                    file && file.url,
-                    file && file.thumbnailUrl,
-                    file && file.type,
-                    msg && msg.imageRecognitionStatus,
-                    msg && msg.imageRecognitionDescription,
-                    msg && msg.proactiveScheduleActionTypes,
-                    msg && msg.proactiveScheduleControlFailed
-                ];
-            })
-        });
-    }
-
-    function renderPreparedTimelineMessages(items, scrollToLatest) {
-        var oldScrollTop = aliyaText.scrollTop;
-        clearSegmentPlaybackTimers();
-        aliyaText.innerHTML = "";
-        for (var renderedIndex = 0; renderedIndex < items.length; renderedIndex++) {
-            var rendered = items[renderedIndex];
-            var messageMeta = {
-                timestamp: rendered.timestamp || null,
-                proactiveScheduleActionTypes: rendered.proactiveScheduleActionTypes || [],
-                proactiveScheduleControlFailed: rendered.proactiveScheduleControlFailed === true
-            };
-            if (rendered.role === "aliya") {
-                // 已有消息切换分段设置时要立即全部重排，不播放逐段延迟。
-                renderAliyaMessage(rendered.content, rendered.images, true, messageMeta);
-            } else {
-                appendMessage(rendered.role, rendered.content, rendered.timestamp, rendered.images, rendered.id, messageMeta);
-            }
-            var nextRendered = items[renderedIndex + 1];
-            if (nextRendered && shouldRenderTimelineDateDivider(rendered.timestamp, nextRendered.timestamp)) {
-                appendTimelineDateDivider(rendered.timestamp, nextRendered.timestamp);
-            }
-        }
-        requestAnimationFrame(function() {
-            aliyaText.scrollTop = scrollToLatest ? aliyaText.scrollHeight : oldScrollTop;
-        });
-    }
-
-    function rerenderCurrentTimelineForSegmentSetting() {
-        if (!timelineRenderedItems.length || timelineRenderedSessionId !== currentSessionId) return;
-        renderPreparedTimelineMessages(timelineRenderedItems, false);
-    }
-
-    function rememberTimelineItem(role, content, images, id, timestamp, proactiveScheduleActionTypes, proactiveScheduleControlFailed) {
-        if (timelineRenderedSessionId !== currentSessionId) {
-            timelineRenderedItems = [];
-            timelineRenderedSessionId = currentSessionId;
-        }
-        timelineRenderedItems.push({
-            role: role,
-            content: content || "",
-            images: images || [],
-            id: id || null,
-            timestamp: timestamp || null,
-            proactiveScheduleActionTypes: proactiveScheduleActionTypes || [],
-            proactiveScheduleControlFailed: proactiveScheduleControlFailed === true
-        });
-    }
-
-    async function applyTimelineSnapshot(data, scrollToLatest) {
-        var renderedMessages = [];
-        var hrProcessed = false;
-
-        // MSK 返回最新→最旧，倒序渲染为页面所需的最旧→最新。
-        for (var i = data.length - 1; i >= 0; i--) {
-            var msg = data[i];
-            var role = msg.role === "user" ? "player" : "aliya";
-            var cleanContent = msg.content || "";
-            var images = timelineAttachmentImageUrls(msg.file);
-            if (role === "aliya") {
-                var processed = await processDrawingInstruction(cleanContent, msg.id);
-                cleanContent = processed.text;
-                images = images.concat(processed.images);
-                var hrResult = processHeartRateInstruction(cleanContent);
-                cleanContent = hrResult.text;
-                if (!hrProcessed) {
-                    if (!hrResult.matched) {
-                        currentRange = ranges.medium;
-                        updateDisplay();
-                    }
-                    hrProcessed = true;
-                }
-            }
-            renderedMessages.push({
-                role: role,
-                content: cleanContent,
-                images: images,
-                id: msg.id,
-                timestamp: msg.createdAt || null,
-                proactiveScheduleActionTypes: msg.proactiveScheduleActionTypes || [],
-                proactiveScheduleControlFailed: msg.proactiveScheduleControlFailed === true
-            });
-        }
-
-        earliestMsgId = null;
-        noMoreHistory = data.length < 30;
-        timelineRenderedItems = renderedMessages.slice();
-        timelineRenderedSessionId = currentSessionId;
-        renderPreparedTimelineMessages(timelineRenderedItems, scrollToLatest);
-        if (data.length > 0) {
-            earliestMsgId = data[data.length - 1].id;
-        }
-        timelineSnapshotMessageIds = {};
-        data.forEach(function(msg) {
-            if (msg && msg.id) timelineSnapshotMessageIds[msg.id] = true;
-        });
-        timelineSnapshotSignature = buildTimelineSnapshotSignature(data);
+        if (isWaiting) { playerInputArea.style.display = "none"; waitImg.style.display = "block"; } 
+        else { playerInputArea.style.display = "flex"; waitImg.style.display = "none"; }
     }
 
     // 初始化拉取消息（通过 timeline 端点，type=new）
     async function fetchInitialMessages() {
-        if (timelineLoadPromise) return timelineLoadPromise;
-        timelineLoadPromise = (async function() {
-            var failed = false;
-            isTimelineLoading = true;
-            setChatLoading(true, "正在加载聊天记录...", "center");
-            try {
-                var res = await fetch(API_BASE + "/api/conversation", {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: makeBody({ action: "timeline", type: "new", session_id: currentSessionId })
-                });
-                var data = await res.json();
-                if (await guardAuthResponse(res, data)) return;
-                if (Array.isArray(data)) {
-                    // 先在内存完成富文本与图片解析，再原子替换，避免聊天区短暂消失。
-                    await applyTimelineSnapshot(data, true);
-                } else if (data && data.error) {
-                    failed = true;
-                    throw new Error(data.error);
-                }
-            } catch (err) {
-                failed = true;
-                console.log("获取时间线失败：", err);
-            } finally {
-                isTimelineLoading = false;
-                if (failed) showChatLoadingError("加载聊天记录失败，已保留当前内容");
-                else setChatLoading(false);
-            }
-        })();
+        aliyaText.innerHTML = "";
         try {
-            return await timelineLoadPromise;
-        } finally {
-            timelineLoadPromise = null;
-        }
+            var res = await fetch(API_BASE + "/api/conversation", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: makeBody({ action: "timeline", type: "new" })
+            });
+            var data = await res.json();
+            if (await guardAuthResponse(res, data)) return;
+            if (Array.isArray(data)) {
+                var hrProcessed = false;
+                // 后端返回最新→最旧（Misskey timeline 默认降序），逆序渲染为正序
+                for (var i = data.length - 1; i >= 0; i--) {
+                    var msg = data[i];
+                    var role = msg.role === "user" ? "player" : "aliya";
+                    var cleanContent = msg.content;
+                    var images = [];
+                    if (role === "aliya") {
+                        var processed = await processDrawingInstruction(msg.content, msg.id);
+                        cleanContent = processed.text;
+                        images = processed.images;
+                        var hrResult = processHeartRateInstruction(cleanContent);
+                        cleanContent = hrResult.text;
+                        // 只在最新一条 aliya 消息时决定是否恢复默认心率
+                        if (!hrProcessed) {
+                            if (!hrResult.matched) {
+                                currentRange = ranges.medium;
+                                updateDisplay();
+                            }
+                            hrProcessed = true;
+                        }
+                    }
+                    if (role === "aliya") {
+                        renderAliyaMessage(cleanContent, images, true);
+                    } else {
+                        appendMessage(role, cleanContent, null, images, msg.id);
+                    }
+                }
+                // 记录最老一条消息的 id，供下拉加载使用
+                if (data.length > 0) {
+                    // data[0] 是最新，data[length-1] 是最旧
+                    earliestMsgId = data[data.length - 1].id;
+                    // 如果首次拉取不足一页，说明没有更多历史了
+                    if (data.length < 30) { noMoreHistory = true; }
+                }
+                requestAnimationFrame(() => { aliyaText.scrollTop = aliyaText.scrollHeight; });
+            }
+        } catch (err) { console.log("获取时间线失败：", err); }
     }
 
     // 下拉加载更多历史消息
     async function loadMoreHistory() {
         if (isLoadingMore || noMoreHistory || earliestMsgId === null) return;
         isLoadingMore = true;
-        setChatLoading(true, "正在加载更早的消息...", "top");
         // 记录当前滚动位置，加载后恢复，避免跳到底部
         var oldScrollHeight = aliyaText.scrollHeight;
 
@@ -1569,7 +1262,7 @@ document.addEventListener("DOMContentLoaded", function (event) {
             var res = await fetch(API_BASE + "/api/conversation", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: makeBody({ action: "timeline", type: "old", last_id: earliestMsgId, session_id: currentSessionId })
+                body: makeBody({ action: "timeline", type: "old", last_id: earliestMsgId })
             });
             var data = await res.json();
             if (await guardAuthResponse(res, data)) return;
@@ -1598,49 +1291,40 @@ document.addEventListener("DOMContentLoaded", function (event) {
             console.log("加载历史消息失败：", err);
         } finally {
             isLoadingMore = false;
-            setChatLoading(false);
         }
     }
 
-    // 将历史消息合并进完整时间线后统一重渲染，确保日期分隔和消息元信息连续。
+    // 将历史消息插入到列表顶部
     async function prependMessages(messages) {
-        // messages 是降序（最新→最旧），通过 unshift 整理为最旧→最新。
-        var preparedMessages = [];
+        // messages 是降序（最新→最旧），从新到旧逐条插到 firstChild 之前
+        // 最终 DOM 顺序：最旧（最前）→ 最新（最后）
         for (var i = 0; i < messages.length; i++) {
             var msg = messages[i];
             var role = msg.role === "user" ? "player" : "aliya";
             var cleanContent = msg.content;
-            var images = timelineAttachmentImageUrls(msg.file);
+            var images = [];
             if (role === "aliya") {
                 var processed = await processDrawingInstruction(msg.content, msg.id);
                 cleanContent = processed.text;
-                images = images.concat(processed.images);
+                images = processed.images;
                 var hrResult = processHeartRateInstruction(cleanContent);
                 cleanContent = hrResult.text;
-                preparedMessages.unshift({
-                    role: role,
-                    content: cleanContent,
-                    images: images,
-                    id: msg.id,
-                    timestamp: msg.createdAt || null,
-                    proactiveScheduleActionTypes: msg.proactiveScheduleActionTypes || [],
-                    proactiveScheduleControlFailed: msg.proactiveScheduleControlFailed === true
-                });
-            } else {
-                preparedMessages.unshift({
-                    role: role,
-                    content: cleanContent || "",
-                    images: images,
-                    id: msg.id,
-                    timestamp: msg.createdAt || null,
-                    proactiveScheduleActionTypes: msg.proactiveScheduleActionTypes || [],
-                    proactiveScheduleControlFailed: msg.proactiveScheduleControlFailed === true
-                });
+                if (segConfig.enabled && cleanContent) {
+                    var segments = splitAssistantMessageIntoSegments(cleanContent);
+                    // 分段后逆序插入（insertMessageAtTop 每次插到最前，逆序保证最终正序）
+                    for (var j = segments.length - 1; j >= 0; j--) {
+                        insertMessageAtTop("aliya", segments[j], null);
+                    }
+                    if (images && images.length > 0) {
+                        for (var k = images.length - 1; k >= 0; k--) {
+                            insertMessageAtTop("aliya", null, [images[k]]);
+                        }
+                    }
+                    continue;
+                }
             }
+            insertMessageAtTop(role, cleanContent, images);
         }
-        timelineRenderedItems = preparedMessages.concat(timelineRenderedItems);
-        timelineRenderedSessionId = currentSessionId;
-        renderPreparedTimelineMessages(timelineRenderedItems, false);
     }
 
     function insertMessageAtTop(role, content, images) {
@@ -1685,25 +1369,10 @@ document.addEventListener("DOMContentLoaded", function (event) {
             var res = await fetch(API_BASE + "/api/poll", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: makeBody({ since: lastMsgId, session_id: currentSessionId })
+                body: makeBody({ since: lastMsgId })
             });
             var data = await res.json();
             if (await guardAuthResponse(res, data)) return;
-            if (data.snapshot === true && Array.isArray(data.messages)) {
-                // 会话切换期间可能有旧请求返回，不能用旧会话覆盖当前聊天区。
-                if (data.session_id && data.session_id !== currentSessionId) return;
-                var snapshotSignature = buildTimelineSnapshotSignature(data.messages);
-                if (snapshotSignature !== timelineSnapshotSignature) {
-                    var hasNewAssistant = data.messages.some(function(msg) {
-                        return msg && msg.role === "assistant" && msg.id && !timelineSnapshotMessageIds[msg.id];
-                    });
-                    await applyTimelineSnapshot(data.messages, isAtBottomFlag);
-                    recentlySentSet = {};
-                    recentlyReceivedSet = {};
-                    if (hasNewAssistant && isWaitingReply) setWaiting(false);
-                }
-                return;
-            }
             if (data.messages && data.messages.length > 0) {
                 for (var i = 0; i < data.messages.length; i++) {
                     var msg = data.messages[i];
@@ -1725,13 +1394,9 @@ document.addEventListener("DOMContentLoaded", function (event) {
                             currentRange = ranges.medium;
                             updateDisplay();
                         }
-                        renderAliyaMessage(hrResult.text, timelineAttachmentImageUrls(msg.file).concat(processed.images), false, {
-                            timestamp: msg.createdAt || msg.timestamp || null,
-                            proactiveScheduleActionTypes: msg.proactiveScheduleActionTypes || msg.proactive_schedule_action_types || [],
-                            proactiveScheduleControlFailed: msg.proactiveScheduleControlFailed === true || msg.proactive_schedule_control_failed === true
-                        });
+                        renderAliyaMessage(hrResult.text, processed.images);
                     } else {
-                        appendMessage(msg.role, msg.content, msg.createdAt || msg.timestamp || null, timelineAttachmentImageUrls(msg.file));
+                        appendMessage(msg.role, msg.content, msg.timestamp);
                     }
                     
                     if (msg.id > lastMsgId) lastMsgId = msg.id;
@@ -1745,54 +1410,27 @@ document.addEventListener("DOMContentLoaded", function (event) {
         }
     }
 
-    async function uploadSelectedImage(file) {
-        var body = new FormData();
-        body.append("file", file);
-        var res = await fetch(API_BASE + "/api/upload_image", {
-            method: "POST",
-            headers: { "X-Aliya-Token": mskToken },
-            body: body
-        });
-        var data = await res.json();
-        if (!res.ok || !data.id) throw new Error(data.error || "图片上传失败");
-        return data.id;
-    }
-
     async function sendMessage() {
         var content = playerInput.value.trim();
-        var file = imageInput && imageInput.files && imageInput.files[0];
-        if (!content && !file) return;
-        // 纯图片消息只显示媒体卡片，和 MSK 原生聊天保持一致。
-        var displayContent = content;
-        var playerTimestamp = new Date().toISOString();
-        var localPreviewImages = file ? [URL.createObjectURL(file)] : [];
-        appendLiveTimelineDateDivider(playerTimestamp);
-        appendMessage("player", displayContent, playerTimestamp, localPreviewImages);
-        rememberTimelineItem("player", displayContent, localPreviewImages, null, playerTimestamp);
+        if (!content) return;
+        appendMessage("player", content);
         playerInput.value = "";
-        if (imageInput) {
-            imageInput.value = "";
-            syncMediaUploadState();
-        }
-        setWaiting(true, file ? "正在上传图片..." : "正在发送...");
-        recentlySentSet[displayContent] = true;
-        setTimeout(function () { delete recentlySentSet[displayContent]; }, 8000);
+        setWaiting(true);
+        recentlySentSet[content] = true;
+        setTimeout(function () { delete recentlySentSet[content]; }, 8000);
         try {
-            await opWaitForPendingConfigSaves();
-            var fileId = file ? await uploadSelectedImage(file) : null;
-            setWaiting(true, "正在等待 Aliya 回复...");
             var controller = new AbortController();
             var timeoutId = setTimeout(function() { controller.abort(); }, 125000);
             var res = await fetch(API_BASE + "/api/chat", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: makeBody({ message: content, file_id: fileId }),
+                body: makeBody({ message: content }),
                 signal: controller.signal
             });
             clearTimeout(timeoutId);
             var data = await res.json();
-            if (await guardAuthResponse(res, data)) { setWaiting(false); return; }
-            if (data.status === "success" && data.assistant_message !== undefined) {
+            if (await guardAuthResponse(res, data)) return;
+            if (data.status === "success" && data.assistant_message) {
                 var rawText = data.assistant_message;
                 var msgId = data.assistant_message_id;
                 var processed = await processDrawingInstruction(rawText, msgId);
@@ -1801,40 +1439,17 @@ document.addEventListener("DOMContentLoaded", function (event) {
                     currentRange = ranges.medium;
                     updateDisplay();
                 }
-                var assistantTimestamp = new Date().toISOString();
-                var assistantMeta = {
-                    timestamp: assistantTimestamp,
-                    proactiveScheduleActionTypes: data.proactive_schedule_action_types || [],
-                    proactiveScheduleControlFailed: data.proactive_schedule_control_failed === true
-                };
-                appendLiveTimelineDateDivider(assistantTimestamp);
-                rememberTimelineItem(
-                    "aliya",
-                    hrResult.text,
-                    processed.images,
-                    msgId,
-                    assistantTimestamp,
-                    assistantMeta.proactiveScheduleActionTypes,
-                    assistantMeta.proactiveScheduleControlFailed
-                );
-                renderAliyaMessage(hrResult.text, processed.images, false, assistantMeta);
+                renderAliyaMessage(hrResult.text, processed.images);
                 setWaiting(false);
                 recentlyReceivedSet[processed.text] = true;
                 setTimeout(function () { delete recentlyReceivedSet[processed.text]; }, 10000);
             } else if (data.status === "error") {
-                var errorReply = data.reply || data.error || "通信故障，请稍后再试";
-                var errorTimestamp = new Date().toISOString();
-                appendLiveTimelineDateDivider(errorTimestamp);
-                rememberTimelineItem("aliya", errorReply, [], null, errorTimestamp);
-                appendMessage("aliya", errorReply, errorTimestamp);
+                appendMessage("aliya", data.reply || data.error || "通信故障，请稍后再试");
                 setWaiting(false);
             }
         } catch (err) {
             console.log("发送消息失败：", err);
-            var failureTimestamp = new Date().toISOString();
-            appendLiveTimelineDateDivider(failureTimestamp);
-            rememberTimelineItem("aliya", "通信故障，请稍后再试", [], null, failureTimestamp);
-            appendMessage("aliya", "通信故障，请稍后再试", failureTimestamp);
+            appendMessage("aliya", "通信故障，请稍后再试");
             setWaiting(false);
         }
     }
@@ -1852,11 +1467,13 @@ document.addEventListener("DOMContentLoaded", function (event) {
     var settingsStatus = document.getElementById("settingsStatus");
     var segTokenInput = document.getElementById("segToken");
     var backgroundMusicSelect = document.getElementById("backgroundMusicSelect");
+    var playModeSelect = document.getElementById("playModeSelect");
 
     function openSettingsPanel() {
         segTokenInput.value = "";
         segTokenInput.placeholder = mskToken ? "留空保持当前 Token" : "Misskey API Token";
         if (backgroundMusicSelect) backgroundMusicSelect.value = activeBackgroundMusic;
+        if (playModeSelect) playModeSelect.value = activePlayMode;
         settingsOverlay.classList.add("active");
         settingsStatus.textContent = "";
         settingsStatus.className = "op-status";
@@ -1875,6 +1492,15 @@ document.addEventListener("DOMContentLoaded", function (event) {
         backgroundMusicSelect.value = activeBackgroundMusic;
         backgroundMusicSelect.addEventListener("change", function() {
             applyBackgroundMusic(this.value, true);
+        });
+    }
+    if (playModeSelect) {
+        playModeSelect.value = activePlayMode;
+        playModeSelect.addEventListener("change", function() {
+            applyPlayMode(this.value);
+            if (activePlayMode !== "single" && activeBackgroundMusic !== "none" && !radioButton.checked) {
+                playBackgroundMusic();
+            }
         });
     }
 
@@ -1905,25 +1531,18 @@ document.addEventListener("DOMContentLoaded", function (event) {
 
     // ==================== Operation 面板 ====================
     var opOverlay = document.getElementById("opOverlay");
-    var opPanel = document.getElementById("opPanel");
-    var opInitialLoading = document.getElementById("opInitialLoading");
     var opCloseBtn = document.getElementById("opCloseBtn");
     var operationBtn = document.getElementById("operationBtn");
     var opSubnav = document.getElementById("opSubnav");
     var opSegToggle = document.getElementById("opSegToggle");
     var opSessionList = document.getElementById("opSessionList");
     var opCreateBtn = document.getElementById("opCreateBtn");
+    var opUpdateBtn = document.getElementById("opUpdateBtn");
     var opStatus = document.getElementById("opStatus");
-    var opTimeAwarenessToggle = document.getElementById("opTimeAwarenessToggle");
-    var opRandomProactiveToggle = document.getElementById("opRandomProactiveToggle");
-    var opScheduledProactiveToggle = document.getElementById("opScheduledProactiveToggle");
-    var opProactiveNotice = document.getElementById("opProactiveNotice");
-    var opProactiveLastError = document.getElementById("opProactiveLastError");
-    var opProactiveRefreshBtn = document.getElementById("opProactiveRefreshBtn");
-    var opProactiveScheduleList = document.getElementById("opProactiveScheduleList");
     var opMemorySettingsLink = document.getElementById("opMemorySettingsLink");
     var opSessionRenameBtn = document.getElementById("opSessionRenameBtn");
     var opSessionDeleteBtn = document.getElementById("opSessionDeleteBtn");
+
     var opSessions = [];
     var opCurrentSessionId = null;
     var opAgentModels = [];
@@ -1931,31 +1550,10 @@ document.addEventListener("DOMContentLoaded", function (event) {
     var opAgentCreditBalance = null;
     var opImageModels = [];
     var opArtistPresets = [];
-    var opVisionModels = [];
-    var opVisionDefaultModelId = "";
     var opModelSuccessRates = {};
     var opCurrentPage = "session";
-    var opRandomProactiveEnabled = false;
-    var opScheduledProactiveEnabled = false;
-    var opProactiveSchedules = [];
-    var opProactiveSchedulesLoading = false;
-    var opProactiveScheduleMutating = null;
     var opPanelLoadPromise = null;
-    var opConfigSaveTimer = null;
-    var opConfigSaveInFlight = false;
-    var opConfigSavePromise = null;
-    var opConfigPendingPatch = {};
-    var opConfigPendingSessionId = null;
-    var opConfigFieldRevisions = {};
-    var opConfigRevision = 0;
-    var opConfigLoadRevision = 0;
-    var opConfigLoadedSessionId = null;
-    var opConfirmedConfig = {};
-    var opDesiredConfig = {};
-    var opConfirmedSessionId = null;
-    var opProactiveReloadAfterSave = false;
-    var opSessionSwitchQueued = null;
-    var opSessionSwitchPromise = null;
+    var opSegmentSaving = false;
     var opSessionActionBusy = false;
     var opFallbackImageModels = [{
         id: "aob0wkxmi3",
@@ -1980,202 +1578,6 @@ document.addEventListener("DOMContentLoaded", function (event) {
         opStatus.className = "op-status" + (type ? " " + type : "");
     }
 
-    function opSetInitialLoading(loading, message) {
-        if (opPanel) opPanel.classList.toggle("is-initial-loading", loading === true);
-        if (opInitialLoading) {
-            opInitialLoading.setAttribute("aria-busy", loading === true && !message ? "true" : "false");
-            opInitialLoading.classList.toggle("error", !!message);
-            var copy = opInitialLoading.querySelector("span:last-child");
-            if (copy) copy.textContent = message || "正在读取当前会话设置...";
-        }
-    }
-
-    function opSyncProactiveNotice() {
-        if (!opProactiveNotice) return;
-        var enabled = opTimeAwarenessToggle && opTimeAwarenessToggle.checked === true;
-        opProactiveNotice.hidden = enabled;
-        opProactiveNotice.textContent = enabled ? "" : "请先在“会话”页面开启时间感知，才能启用主动消息。";
-        if (opRandomProactiveToggle) opRandomProactiveToggle.disabled = !enabled;
-        if (opScheduledProactiveToggle) opScheduledProactiveToggle.disabled = !enabled;
-    }
-
-    function opFormatProactiveDate(value) {
-        if (!value) return "";
-        var date = new Date(value);
-        if (Number.isNaN(date.getTime())) return String(value);
-        return new Intl.DateTimeFormat("zh-CN", {
-            timeZone: "Asia/Shanghai",
-            year: "numeric", month: "2-digit", day: "2-digit",
-            hour: "2-digit", minute: "2-digit", hour12: false
-        }).format(date).replace(/\//g, "-");
-    }
-
-    function opProactiveStatusLabel(status) {
-        return status === "active" ? "执行中" : status === "paused" ? "已暂停" : status === "completed" ? "已完成" : "已取消";
-    }
-
-    function opProactiveTriggerLabel(schedule) {
-        var trigger = schedule && schedule.trigger || {};
-        if (trigger.type === "once") return "一次性 · " + (trigger.at ? opFormatProactiveDate(trigger.at) : "未设置时间");
-        var repeat = trigger.repeat && trigger.repeat.mode === "count"
-            ? "重复 " + trigger.repeat.count + " 次"
-            : "无限重复";
-        return repeat + " · " + (trigger.cron || "未设置规则");
-    }
-
-    function opProactiveRemainingLabel(value) {
-        return value == null ? "无限重复" : "剩余 " + value + " 次";
-    }
-
-    function opRenderProactiveSchedules() {
-        if (!opProactiveScheduleList) return;
-        opProactiveScheduleList.innerHTML = "";
-        if (opProactiveSchedulesLoading) {
-            opProactiveScheduleList.innerHTML = '<div class="op-proactive-empty"><span class="op-loading-spinner"></span>正在加载定时计划...</div>';
-            return;
-        }
-        if (!opCurrentSessionId) {
-            opProactiveScheduleList.innerHTML = '<div class="op-proactive-empty">当前没有可用会话。</div>';
-            return;
-        }
-        if (!opProactiveSchedules.length) {
-            opProactiveScheduleList.innerHTML = '<div class="op-proactive-empty">当前没有定时计划。</div>';
-            return;
-        }
-        opProactiveSchedules.forEach(function(schedule) {
-            var card = document.createElement("div");
-            card.className = "op-proactive-card";
-
-            var top = document.createElement("div");
-            top.className = "op-proactive-card-top";
-            var description = document.createElement("div");
-            description.className = "op-proactive-card-description";
-            description.textContent = schedule.description || "未命名定时计划";
-            var status = document.createElement("span");
-            status.className = "op-proactive-status status-" + (schedule.status || "unknown");
-            status.textContent = opProactiveStatusLabel(schedule.status);
-            top.appendChild(description);
-            top.appendChild(status);
-            card.appendChild(top);
-
-            var meta = document.createElement("div");
-            meta.className = "op-proactive-card-meta";
-            var trigger = document.createElement("span");
-            trigger.textContent = opProactiveTriggerLabel(schedule);
-            meta.appendChild(trigger);
-            if (schedule.nextRunAt) {
-                var next = document.createElement("span");
-                next.textContent = "下次执行 " + opFormatProactiveDate(schedule.nextRunAt);
-                meta.appendChild(next);
-            }
-            if (schedule.lastRunAt) {
-                var last = document.createElement("span");
-                last.textContent = "上次执行 " + opFormatProactiveDate(schedule.lastRunAt);
-                meta.appendChild(last);
-            }
-            if (schedule.createdAt) {
-                var created = document.createElement("span");
-                created.textContent = "创建于 " + opFormatProactiveDate(schedule.createdAt);
-                meta.appendChild(created);
-            }
-            var remaining = document.createElement("span");
-            remaining.textContent = opProactiveRemainingLabel(schedule.remainingRuns);
-            meta.appendChild(remaining);
-            card.appendChild(meta);
-
-            var actions = document.createElement("div");
-            actions.className = "op-proactive-card-actions";
-            if (schedule.status === "active" || schedule.status === "paused") {
-                var toggle = document.createElement("button");
-                toggle.type = "button";
-                toggle.className = "op-proactive-action-btn";
-                toggle.textContent = schedule.status === "active" ? "暂停" : "恢复";
-                toggle.disabled = opProactiveScheduleMutating === schedule.id || (schedule.status === "paused" && (!opTimeAwarenessToggle || !opTimeAwarenessToggle.checked || !opScheduledProactiveEnabled));
-                toggle.addEventListener("click", function() { opToggleProactiveSchedule(schedule); });
-                actions.appendChild(toggle);
-            }
-            var remove = document.createElement("button");
-            remove.type = "button";
-            remove.className = "op-proactive-action-btn danger";
-            remove.textContent = "删除";
-            remove.disabled = opProactiveScheduleMutating === schedule.id;
-            remove.addEventListener("click", function() { opDeleteProactiveSchedule(schedule); });
-            actions.appendChild(remove);
-            card.appendChild(actions);
-            opProactiveScheduleList.appendChild(card);
-        });
-    }
-
-    async function opLoadProactiveSchedules() {
-        if (opProactiveSchedulesLoading) return;
-        var previousSchedules = opProactiveSchedules.slice();
-        opProactiveSchedulesLoading = true;
-        opRenderProactiveSchedules();
-        try {
-            var data = await opPostConversation({ action: "proactive_schedules", session_id: opCurrentSessionId });
-            opProactiveSchedules = Array.isArray(data) ? data : [];
-        } catch (err) {
-            opProactiveSchedules = previousSchedules;
-            if (opCurrentPage === "proactive") opShowStatus("加载定时计划失败：" + err.message, "error");
-        } finally {
-            opProactiveSchedulesLoading = false;
-            opRenderProactiveSchedules();
-        }
-    }
-
-    function opSaveProactiveSetting(kind, enabled) {
-        if (!opTimeAwarenessToggle || !opTimeAwarenessToggle.checked) {
-            if (kind === "random" && opRandomProactiveToggle) opRandomProactiveToggle.checked = opRandomProactiveEnabled;
-            if (kind === "scheduled" && opScheduledProactiveToggle) opScheduledProactiveToggle.checked = opScheduledProactiveEnabled;
-            opShowStatus("请先开启时间感知", "error");
-            return;
-        }
-        var key = kind === "random" ? "random_proactive_enabled" : "scheduled_proactive_enabled";
-        if (kind === "random") opRandomProactiveEnabled = enabled;
-        else opScheduledProactiveEnabled = enabled;
-        if (opTimeAwarenessToggle) opTimeAwarenessToggle.disabled = opRandomProactiveEnabled || opScheduledProactiveEnabled;
-        if (kind === "scheduled" && enabled) opProactiveReloadAfterSave = true;
-        opRenderProactiveSchedules();
-        var patch = {};
-        patch[key] = enabled;
-        opQueueConfigPatch(patch);
-    }
-
-    async function opToggleProactiveSchedule(schedule) {
-        if (opProactiveScheduleMutating) return;
-        var status = schedule.status === "active" ? "paused" : "active";
-        opProactiveScheduleMutating = schedule.id;
-        opRenderProactiveSchedules();
-        try {
-            await opWaitForPendingConfigSaves();
-            var result = await opPostConversation({ action: "set_proactive_status", session_id: opCurrentSessionId, schedule_id: schedule.id, status: status });
-            if (result && result.status === "completed") opShowStatus("一次性计划已完成，无法恢复", "error");
-            await opLoadProactiveSchedules();
-        } catch (err) {
-            opShowStatus("修改定时计划失败：" + err.message, "error");
-        } finally {
-            opProactiveScheduleMutating = null;
-            opRenderProactiveSchedules();
-        }
-    }
-
-    async function opDeleteProactiveSchedule(schedule) {
-        if (opProactiveScheduleMutating || !window.confirm("确定删除这个定时计划？")) return;
-        opProactiveScheduleMutating = schedule.id;
-        opRenderProactiveSchedules();
-        try {
-            await opWaitForPendingConfigSaves();
-            await opPostConversation({ action: "delete_proactive_schedule", session_id: opCurrentSessionId, schedule_id: schedule.id });
-            await opLoadProactiveSchedules();
-            opShowStatus("定时计划已删除", "success");
-        } catch (err) {
-            opShowStatus("删除定时计划失败：" + err.message, "error");
-        } finally {
-            opProactiveScheduleMutating = null;
-            opRenderProactiveSchedules();
-        }
-    }
-
     function opSyncSegmentToggle() {
         if (opSegToggle) opSegToggle.checked = segConfig.enabled === true;
     }
@@ -2191,11 +1593,6 @@ document.addEventListener("DOMContentLoaded", function (event) {
             });
         }
         if (opCurrentPage === "memory") opSyncMemorySettingsLink();
-        if (opCurrentPage === "proactive") {
-            opSyncProactiveNotice();
-            opRenderProactiveSchedules();
-            if (opCurrentSessionId) opLoadProactiveSchedules();
-        }
     }
 
     function opSyncMemorySettingsLink() {
@@ -2327,7 +1724,6 @@ document.addEventListener("DOMContentLoaded", function (event) {
 
     function opRenderAgentModelLoading() {
         var group = document.getElementById("cfgAgentModel");
-        if (group && opAgentModels.length > 0) return;
         if (group) group.innerHTML = '<div class="op-image-loading"><span class="op-loading-spinner"></span><span>正在加载对话模型...</span></div>';
         var currentEl = document.getElementById("opAgentModelCurrent");
         if (currentEl) currentEl.textContent = "...";
@@ -2336,7 +1732,6 @@ document.addEventListener("DOMContentLoaded", function (event) {
     function opRenderAgentModels(selectedId) {
         var group = document.getElementById("cfgAgentModel");
         if (!group) return;
-        group.classList.remove("is-loading");
         group.innerHTML = "";
 
         if (opAgentModels.length === 0) {
@@ -2369,13 +1764,6 @@ document.addEventListener("DOMContentLoaded", function (event) {
             head.appendChild(action);
             card.appendChild(head);
 
-            if (model.description) {
-                var description = document.createElement("p");
-                description.className = "op-model-description";
-                description.textContent = model.description;
-                card.appendChild(description);
-            }
-
             var chips = document.createElement("div");
             chips.className = "op-model-meta";
             var rate = opSuccessRateInfo(value);
@@ -2394,16 +1782,13 @@ document.addEventListener("DOMContentLoaded", function (event) {
     function opRenderImageLoading() {
         var modelGroup = document.getElementById("cfgAgentImageModel");
         var presetGroup = document.getElementById("cfgImgArtistPresetId");
-        if (modelGroup && opImageModels.length === 0) modelGroup.innerHTML = '<div class="op-image-loading"><span class="op-loading-spinner"></span><span>正在加载模型...</span></div>';
-        if (presetGroup && opArtistPresets.length === 0 && !presetGroup.querySelector(".op-artist-card")) {
-            presetGroup.innerHTML = '<div class="op-image-loading"><span class="op-loading-spinner"></span><span>正在加载画师串...</span></div>';
-        }
+        if (modelGroup) modelGroup.innerHTML = '<div class="op-image-loading"><span class="op-loading-spinner"></span><span>正在加载模型...</span></div>';
+        if (presetGroup) presetGroup.innerHTML = '<div class="op-image-loading"><span class="op-loading-spinner"></span><span>正在加载画师串...</span></div>';
     }
 
     function opRenderImageModels(selectedId) {
         var group = document.getElementById("cfgAgentImageModel");
         if (!group) return;
-        group.classList.remove("is-loading");
         group.innerHTML = "";
 
         function appendModelCard(model) {
@@ -2412,10 +1797,7 @@ document.addEventListener("DOMContentLoaded", function (event) {
             card.type = "button";
             card.className = "op-choice-card op-model-card";
             card.setAttribute("data-value", value);
-            var modelHints = [];
-            if (model.apiModelName) modelHints.push("API 模型：" + model.apiModelName);
-            if (model.description) modelHints.push(model.description);
-            if (modelHints.length) card.title = modelHints.join("\n");
+            if (model.apiModelName) card.title = "API 模型：" + model.apiModelName;
 
             var head = document.createElement("div");
             head.className = "op-model-card-head";
@@ -2440,7 +1822,6 @@ document.addEventListener("DOMContentLoaded", function (event) {
             } else {
                 var rate = opSuccessRateInfo(value);
                 chips.appendChild(opCreateMetaChip("提供商", opProviderLabel(model.provider), ""));
-                if (model.supportsReferenceImage === true) chips.appendChild(opCreateMetaChip("参考图", "支持", "highlight"));
                 chips.appendChild(opCreateMetaChip("费用", opFormatModelCost(model.costPerCall), Number(model.costPerCall) === 0 ? "highlight" : ""));
                 chips.appendChild(opCreateMetaChip("1h 成功率", rate.text, rate.className));
             }
@@ -2454,55 +1835,9 @@ document.addEventListener("DOMContentLoaded", function (event) {
         opSetChoiceValue("cfgAgentImageModel", selectedId || "", "");
     }
 
-    function opRenderVisionModelLoading() {
-        var group = document.getElementById("opVisionModelGroup");
-        var select = document.getElementById("cfgAgentVisionModel");
-        var cost = document.getElementById("opVisionModelCost");
-        if (group) group.hidden = false;
-        if (select) {
-            select.disabled = true;
-            select.innerHTML = "";
-            var option = document.createElement("option");
-            option.textContent = "正在加载识图模型...";
-            select.appendChild(option);
-        }
-        if (cost) cost.textContent = "用于理解你发送的图片 · 识图费用：-";
-    }
-
-    function opRenderVisionModels(selectedId) {
-        var group = document.getElementById("opVisionModelGroup");
-        var select = document.getElementById("cfgAgentVisionModel");
-        var cost = document.getElementById("opVisionModelCost");
-        if (!group || !select) return;
-        if (!opVisionModels.length) {
-            group.hidden = true;
-            select.disabled = true;
-            return;
-        }
-
-        var fallbackId = opVisionDefaultModelId || opVisionModels[0].id || "";
-        var resolvedId = selectedId || fallbackId;
-        if (!opVisionModels.some(function(model) { return model.id === resolvedId; })) resolvedId = fallbackId;
-
-        select.innerHTML = "";
-        opVisionModels.forEach(function(model) {
-            var option = document.createElement("option");
-            option.value = model.id || "";
-            option.textContent = model.name || model.id || "未命名模型";
-            select.appendChild(option);
-        });
-        select.value = resolvedId;
-        select.disabled = false;
-        group.hidden = false;
-
-        var activeModel = opVisionModels.find(function(model) { return model.id === resolvedId; });
-        if (cost) cost.textContent = "用于理解你发送的图片 · 识图费用：" + opFormatModelCost(activeModel && activeModel.costPerCall);
-    }
-
     function opRenderArtistPresets(selectedId) {
         var group = document.getElementById("cfgImgArtistPresetId");
         if (!group) return;
-        group.classList.remove("is-loading");
         group.innerHTML = "";
         var presets = opArtistPresets.length > 0 ? opArtistPresets : opFallbackArtistPresets;
         if (presets.length === 0) {
@@ -2566,7 +1901,7 @@ document.addEventListener("DOMContentLoaded", function (event) {
         }
     }
 
-    async function opLoadAgentModelOptions(shouldRender) {
+    async function opLoadAgentModelOptions() {
         opRenderAgentModelLoading();
         var results = await Promise.allSettled([
             opFetchConversationAction("agent_models"),
@@ -2589,10 +1924,10 @@ document.addEventListener("DOMContentLoaded", function (event) {
             console.log("加载智能体余额失败：", results[1].reason);
             opAgentCreditBalance = null;
         }
-        if (shouldRender !== false) opRenderAgentModels(opGetChoiceValue("cfgAgentModel", opResolvedAgentDefaultModelId()));
+        opRenderAgentModels(opGetChoiceValue("cfgAgentModel", opResolvedAgentDefaultModelId()));
     }
 
-    async function opLoadImageOptions(shouldRender) {
+    async function opLoadImageOptions() {
         opRenderImageLoading();
         var results = await Promise.allSettled([
             opFetchConversationAction("image_models"),
@@ -2610,34 +1945,36 @@ document.addEventListener("DOMContentLoaded", function (event) {
             console.log("加载画师串失败：", results[1].reason);
             opArtistPresets = opFallbackArtistPresets.slice();
         }
-        if (shouldRender !== false) {
-            opRenderImageModels(opGetChoiceValue("cfgAgentImageModel", ""));
-            opRenderArtistPresets(opGetChoiceValue("cfgImgArtistPresetId", "default-anime"));
-        }
+        opRenderImageModels(opGetChoiceValue("cfgAgentImageModel", ""));
+        opRenderArtistPresets(opGetChoiceValue("cfgImgArtistPresetId", "default-anime"));
     }
 
-    async function opLoadVisionModelOptions(shouldRender) {
-        if (!opVisionModels.length) opRenderVisionModelLoading();
-        try {
-            var data = await opFetchConversationAction("vision_models");
-            opVisionModels = data && Array.isArray(data.models) ? data.models : [];
-            opVisionDefaultModelId = data && typeof data.defaultModelId === "string" ? data.defaultModelId : "";
-        } catch (err) {
-            console.log("加载识图模型失败：", err);
-            opVisionModels = [];
-            opVisionDefaultModelId = "";
-        }
-        if (shouldRender !== false) opRenderVisionModels(opDesiredConfig.agent_vision_model_id || "");
-    }
-
-    function opSaveSegmentedOutput(enabled) {
-        enabled = enabled === true;
-        if (segConfig.enabled === enabled) return;
-        segConfig.enabled = enabled;
+    async function opSaveSegmentedOutput(enabled) {
+        if (opSegmentSaving) return;
+        var previous = segConfig.enabled === true;
+        segConfig.enabled = enabled === true;
         saveSegConfig();
         opSyncSegmentToggle();
-        rerenderCurrentTimelineForSegmentSetting();
-        opQueueConfigPatch({ segmented_output_enabled: enabled });
+        opSegmentSaving = true;
+        if (opSegToggle) opSegToggle.disabled = true;
+        try {
+            var data = await opPostConversation({ action: "update_segmented", enabled: segConfig.enabled });
+            var saved = data && data.data && typeof data.data.segmentedOutputEnabled === "boolean"
+                ? data.data.segmentedOutputEnabled
+                : segConfig.enabled;
+            segConfig.enabled = saved;
+            saveSegConfig();
+            opSyncSegmentToggle();
+            opShowStatus("分段输出设置已保存", "success");
+        } catch (err) {
+            segConfig.enabled = previous;
+            saveSegConfig();
+            opSyncSegmentToggle();
+            opShowStatus("分段输出保存失败：" + err.message, "error");
+        } finally {
+            opSegmentSaving = false;
+            if (opSegToggle) opSegToggle.disabled = false;
+        }
     }
 
     function opGetChoiceValue(groupId, fallbackValue) {
@@ -2683,21 +2020,8 @@ document.addEventListener("DOMContentLoaded", function (event) {
             var clickTarget = event.target.nodeType === 3 ? event.target.parentElement : event.target;
             var target = clickTarget.closest("[data-value]");
             if (!target || !group.contains(target)) return;
-            var nextValue = target.getAttribute("data-value");
-            if (opGetChoiceValue(groupId, "") === nextValue) return;
-            opSetChoiceValue(groupId, nextValue);
+            opSetChoiceValue(groupId, target.getAttribute("data-value"));
             if (groupId === "cfgAgentModel") opUpdateAgentModelHero();
-            if (groupId === "cfgAgentModel") {
-                var defaultAgentModelId = opResolvedAgentDefaultModelId();
-                opQueueConfigPatch({ agent_model_id: nextValue === defaultAgentModelId ? "" : nextValue });
-            } else if (groupId === "cfgAgentImageModel") {
-                opQueueConfigPatch({ agent_image_model_id: nextValue });
-            } else if (groupId === "cfgImgSize" || groupId === "cfgImgArtistPresetId") {
-                opQueueConfigPatch({
-                    img_size: opGetChoiceValue("cfgImgSize", "landscape"),
-                    img_artist_preset_id: opGetChoiceValue("cfgImgArtistPresetId", "default-anime")
-                });
-            }
         });
         opSetChoiceValue(groupId, opGetChoiceValue(groupId));
     }
@@ -2707,26 +2031,13 @@ document.addEventListener("DOMContentLoaded", function (event) {
     opBindChoiceGroup("cfgImgSize");
     opBindChoiceGroup("cfgImgArtistPresetId");
 
-    var opVisionModelSelect = document.getElementById("cfgAgentVisionModel");
-    if (opVisionModelSelect) {
-        opVisionModelSelect.addEventListener("change", function() {
-            var nextValue = opVisionModelSelect.value || "";
-            if (!nextValue || opDesiredConfig.agent_vision_model_id === nextValue) return;
-            opQueueConfigPatch({ agent_vision_model_id: nextValue });
-            opRenderVisionModels(nextValue);
-        });
-    }
-
-    function opCollectConfigPatch() {
+    function opCollectConfig() {
         var config = {
+            action: "update",
             img_size: opGetChoiceValue("cfgImgSize", "landscape"),
             img_artist_preset_id: opGetChoiceValue("cfgImgArtistPresetId", "default-anime"),
             agent_image_model_id: opGetChoiceValue("cfgAgentImageModel", "aob0wkxmi3"),
-            agent_vision_model_id: (document.getElementById("cfgAgentVisionModel") || {}).value || "",
-            segmented_output_enabled: segConfig.enabled === true,
-            time_awareness_enabled: opTimeAwarenessToggle?.checked === true,
-            random_proactive_enabled: opRandomProactiveEnabled === true,
-            scheduled_proactive_enabled: opScheduledProactiveEnabled === true
+            segmented_output_enabled: segConfig.enabled === true
         };
         if (opAgentModels.length > 0) {
             var defaultAgentModelId = opResolvedAgentDefaultModelId();
@@ -2736,216 +2047,7 @@ document.addEventListener("DOMContentLoaded", function (event) {
         return config;
     }
 
-    function opHasOwn(obj, key) {
-        return Object.prototype.hasOwnProperty.call(obj, key);
-    }
-
-    function opApplyConfigPatchToControls(patch) {
-        if (!patch) return;
-        if (opHasOwn(patch, "agent_model_id")) {
-            opSetChoiceValue("cfgAgentModel", opDisplayAgentModelId(patch.agent_model_id), opResolvedAgentDefaultModelId());
-            opUpdateAgentModelHero();
-        }
-        if (opHasOwn(patch, "agent_image_model_id")) {
-            opSetChoiceValue("cfgAgentImageModel", patch.agent_image_model_id || "", "");
-        }
-        if (opHasOwn(patch, "agent_vision_model_id")) {
-            opRenderVisionModels(patch.agent_vision_model_id || "");
-        }
-        if (opHasOwn(patch, "img_size")) {
-            opSetChoiceValue("cfgImgSize", patch.img_size || "landscape", "landscape");
-        }
-        if (opHasOwn(patch, "img_artist_preset_id")) {
-            opSetChoiceValue("cfgImgArtistPresetId", patch.img_artist_preset_id || "default-anime", "default-anime");
-        }
-        if (opHasOwn(patch, "segmented_output_enabled")) {
-            var previousSegmented = segConfig.enabled === true;
-            segConfig.enabled = patch.segmented_output_enabled === true;
-            saveSegConfig();
-            opSyncSegmentToggle();
-            if (previousSegmented !== segConfig.enabled) rerenderCurrentTimelineForSegmentSetting();
-        }
-        if (opHasOwn(patch, "time_awareness_enabled") && opTimeAwarenessToggle) {
-            opTimeAwarenessToggle.checked = patch.time_awareness_enabled === true;
-        }
-        if (opHasOwn(patch, "random_proactive_enabled")) {
-            opRandomProactiveEnabled = patch.random_proactive_enabled === true;
-            if (opRandomProactiveToggle) opRandomProactiveToggle.checked = opRandomProactiveEnabled;
-        }
-        if (opHasOwn(patch, "scheduled_proactive_enabled")) {
-            opScheduledProactiveEnabled = patch.scheduled_proactive_enabled === true;
-            if (opScheduledProactiveToggle) opScheduledProactiveToggle.checked = opScheduledProactiveEnabled;
-        }
-        if (opTimeAwarenessToggle) opTimeAwarenessToggle.disabled = opRandomProactiveEnabled || opScheduledProactiveEnabled;
-        opSyncProactiveNotice();
-        opRenderProactiveSchedules();
-    }
-
-    function opConfigPatchFromServer(data) {
-        var imgSettings = data && data.agentImageSettings || {};
-        return {
-            agent_model_id: data && data.agentModelId || "",
-            agent_image_model_id: data && data.agentImageModelId || "",
-            agent_vision_model_id: data && data.agentVisionModelId || "",
-            img_size: imgSettings.size || "landscape",
-            img_artist_preset_id: imgSettings.artistPresetId || "default-anime",
-            segmented_output_enabled: !!(data && data.segmentedOutputEnabled === true),
-            time_awareness_enabled: !(data && data.timeAwarenessEnabled === false),
-            random_proactive_enabled: !!(data && data.randomProactiveEnabled === true),
-            scheduled_proactive_enabled: !!(data && data.scheduledProactiveEnabled === true)
-        };
-    }
-
-    function opAdoptServerConfig(data, revisionSnapshot) {
-        if (!data) return;
-        var sessionId = data.id || opCurrentSessionId || currentSessionId;
-        if (sessionId && opConfirmedSessionId !== sessionId) {
-            opConfirmedSessionId = sessionId;
-            opConfirmedConfig = {};
-            opDesiredConfig = {};
-            opConfigFieldRevisions = {};
-        }
-        opCurrentSessionId = sessionId || null;
-        currentSessionId = opCurrentSessionId;
-        var serverPatch = opConfigPatchFromServer(data);
-        var safePatch = {};
-        Object.keys(serverPatch).forEach(function(key) {
-            var startedAt = revisionSnapshot && opHasOwn(revisionSnapshot, key) ? revisionSnapshot[key] : 0;
-            var currentRevision = opConfigFieldRevisions[key] || 0;
-            if (currentRevision !== startedAt) return;
-            opConfirmedConfig[key] = serverPatch[key];
-            opDesiredConfig[key] = serverPatch[key];
-            safePatch[key] = serverPatch[key];
-        });
-        opApplyConfigPatchToControls(safePatch);
-        opConfigLoadedSessionId = opCurrentSessionId;
-        opSyncMemorySettingsLink();
-        if (opProactiveLastError) {
-            var errorLines = [];
-            if (data.randomProactiveLastError) errorLines.push("上次随机主动消息执行失败，本次已跳过。");
-            if (data.scheduledProactiveLastError) errorLines.push("上次定时主动消息执行失败，本次已跳过。");
-            opProactiveLastError.hidden = errorLines.length === 0;
-            opProactiveLastError.textContent = errorLines.join(" ");
-        }
-    }
-
-    function opResetConfigStateForSession(sessionId) {
-        if (opConfigSaveTimer) clearTimeout(opConfigSaveTimer);
-        opConfigSaveTimer = null;
-        opConfigPendingPatch = {};
-        opConfigPendingSessionId = null;
-        opConfigFieldRevisions = {};
-        opConfigRevision = 0;
-        opConfigLoadedSessionId = null;
-        opConfirmedSessionId = sessionId || null;
-        opConfirmedConfig = {};
-        opDesiredConfig = {};
-        opConfigLoadRevision++;
-    }
-
-    function opQueueConfigPatch(patch) {
-        var sessionId = opCurrentSessionId || currentSessionId;
-        var keys = Object.keys(patch || {});
-        if (!keys.length) return;
-        if (!sessionId) {
-            var unavailableRollback = {};
-            keys.forEach(function(key) {
-                if (opHasOwn(opConfirmedConfig, key)) unavailableRollback[key] = opConfirmedConfig[key];
-            });
-            opApplyConfigPatchToControls(unavailableRollback);
-            opShowStatus("当前没有可更新的会话", "error");
-            return;
-        }
-        if (opConfigPendingSessionId && opConfigPendingSessionId !== sessionId) {
-            opShowStatus("会话正在切换，请稍候重试", "error");
-            return;
-        }
-        opConfigPendingSessionId = sessionId;
-        keys.forEach(function(key) {
-            var revision = ++opConfigRevision;
-            opConfigFieldRevisions[key] = revision;
-            opConfigPendingPatch[key] = patch[key];
-            opDesiredConfig[key] = patch[key];
-        });
-        opShowStatus("设置已生效，正在同步...");
-        if (opConfigSaveTimer) clearTimeout(opConfigSaveTimer);
-        opConfigSaveTimer = setTimeout(function() {
-            opConfigSaveTimer = null;
-            void opFlushConfigSave();
-        }, 140);
-    }
-
-    function opFlushConfigSave() {
-        if (opConfigSaveInFlight) return opConfigSavePromise || Promise.resolve();
-        var keys = Object.keys(opConfigPendingPatch);
-        if (!keys.length) return Promise.resolve();
-        if (opConfigSaveTimer) clearTimeout(opConfigSaveTimer);
-        opConfigSaveTimer = null;
-        var patch = opConfigPendingPatch;
-        var sessionId = opConfigPendingSessionId || opCurrentSessionId || currentSessionId;
-        var sentRevisions = {};
-        keys.forEach(function(key) { sentRevisions[key] = opConfigFieldRevisions[key] || 0; });
-        opConfigPendingPatch = {};
-        opConfigPendingSessionId = null;
-        opConfigSaveInFlight = true;
-
-        var task = (async function() {
-            try {
-                var payload = Object.assign({ action: "update", session_id: sessionId }, patch);
-                var result = await opPostConversation(payload);
-                if (!result) throw new Error("请求未完成");
-                keys.forEach(function(key) { opConfirmedConfig[key] = patch[key]; });
-                if (opHasOwn(patch, "scheduled_proactive_enabled") && patch.scheduled_proactive_enabled && opProactiveReloadAfterSave) {
-                    opProactiveReloadAfterSave = false;
-                    if (sessionId === (opCurrentSessionId || currentSessionId)) void opLoadProactiveSchedules();
-                }
-                if (sessionId === (opCurrentSessionId || currentSessionId) && Object.keys(opConfigPendingPatch).length === 0) {
-                    opShowStatus("设置已同步", "success");
-                }
-            } catch (err) {
-                var rollbackPatch = {};
-                keys.forEach(function(key) {
-                    if ((opConfigFieldRevisions[key] || 0) === sentRevisions[key] && opHasOwn(opConfirmedConfig, key)) {
-                        rollbackPatch[key] = opConfirmedConfig[key];
-                        opDesiredConfig[key] = opConfirmedConfig[key];
-                    }
-                });
-                if (sessionId === (opCurrentSessionId || currentSessionId)) {
-                    opApplyConfigPatchToControls(rollbackPatch);
-                    opShowStatus("设置同步失败：" + err.message, "error");
-                }
-            } finally {
-                opConfigSaveInFlight = false;
-                if (opConfigSavePromise === task) opConfigSavePromise = null;
-                if (Object.keys(opConfigPendingPatch).length > 0) void opFlushConfigSave();
-            }
-        })();
-        opConfigSavePromise = task;
-        return task;
-    }
-
-    async function opWaitForPendingConfigSaves() {
-        while (opConfigSaveTimer || opConfigSaveInFlight || Object.keys(opConfigPendingPatch).length > 0) {
-            if (opConfigSaveTimer) {
-                clearTimeout(opConfigSaveTimer);
-                opConfigSaveTimer = null;
-            }
-            if (!opConfigSaveInFlight && Object.keys(opConfigPendingPatch).length > 0) {
-                await opFlushConfigSave();
-            } else if (opConfigSavePromise) {
-                await opConfigSavePromise;
-            } else {
-                break;
-            }
-        }
-    }
-
     function opRenderSessionLoading() {
-        if (opSessions.length > 0) {
-            opSessionList.classList.remove("is-loading");
-            return;
-        }
-        opSessionList.classList.remove("is-loading");
         opSessionList.innerHTML =
             '<div class="op-session-loading">' +
                 '<span class="op-session-loading-spinner"></span>' +
@@ -2953,56 +2055,7 @@ document.addEventListener("DOMContentLoaded", function (event) {
             '</div>';
     }
 
-    function opRequestSessionSwitch(session) {
-        if (!session || !session.id) return;
-        if (!opSessionSwitchPromise && !opSessionSwitchQueued && session.id === opCurrentSessionId) return;
-        opSessionSwitchQueued = session;
-        opShowStatus("正在切换到会话：" + (session.name || session.id) + "...");
-        if (opSessionSwitchPromise) return;
-
-        var task = (async function() {
-            var lastSuccessfulSession = null;
-            while (opSessionSwitchQueued) {
-                var targetSession = opSessionSwitchQueued;
-                opSessionSwitchQueued = null;
-                try {
-                    await opWaitForPendingConfigSaves();
-                    var data = await opPostConversation({ action: "switch_session", session_id: targetSession.id });
-                    if (!data || data.status !== "success") throw new Error(data && data.error || "切换会话失败");
-                    lastSuccessfulSession = targetSession;
-                    if (opSessionSwitchQueued) continue;
-
-                    opCurrentSessionId = targetSession.id;
-                    currentSessionId = targetSession.id;
-                    opResetConfigStateForSession(targetSession.id);
-                    loadSegConfig();
-                    opSyncSegmentToggle();
-                    opRenderSessions();
-                    if (opOverlay.classList.contains("active")) opSetInitialLoading(true);
-                    await Promise.all([opLoadConfig(), fetchInitialMessages()]);
-                    opShowStatus("已切换到会话：" + (targetSession.name || targetSession.id), "success");
-                } catch (err) {
-                    if (!opSessionSwitchQueued && lastSuccessfulSession) {
-                        opCurrentSessionId = lastSuccessfulSession.id;
-                        currentSessionId = lastSuccessfulSession.id;
-                        opResetConfigStateForSession(lastSuccessfulSession.id);
-                        opRenderSessions();
-                        if (opOverlay.classList.contains("active")) opSetInitialLoading(true);
-                        await Promise.all([opLoadConfig(), fetchInitialMessages()]);
-                    }
-                    if (!opSessionSwitchQueued) opShowStatus("切换会话失败：" + err.message, "error");
-                }
-            }
-        })();
-        opSessionSwitchPromise = task;
-        task.finally(function() {
-            if (opSessionSwitchPromise === task) opSessionSwitchPromise = null;
-            if (opSessionSwitchQueued) opRequestSessionSwitch(opSessionSwitchQueued);
-        });
-    }
-
     function opRenderSessions() {
-        opSessionList.classList.remove("is-loading");
         opSessionList.innerHTML = "";
         var visibleSessions = opSessions.filter(function(session) { return !!session; });
         if (visibleSessions.length === 0) {
@@ -3035,14 +2088,38 @@ document.addEventListener("DOMContentLoaded", function (event) {
             item.appendChild(infoDiv);
             item.appendChild(idSpan);
 
-            item.addEventListener("click", function() { opRequestSessionSwitch(session); });
+            item.addEventListener("click", async function() {
+                try {
+                    var res = await fetch(API_BASE + "/api/conversation", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: makeBody({ action: "switch_session", session_id: session.id })
+                    });
+                    var data = await res.json();
+                    if (await guardAuthResponse(res, data)) return;
+                    if (data.status === "success") {
+                        opCurrentSessionId = session.id;
+                        currentSessionId = session.id;
+                        loadSegConfig();
+                        opSyncSegmentToggle();
+                        opRenderSessions();
+                        opShowStatus("已切换到会话：" + (session.name || session.id), "success");
+                        await opLoadConfig();
+                        // 切换后清空聊天区并重新拉取 timeline
+                        await fetchInitialMessages();
+                    } else {
+                        opShowStatus(data.error || "切换会话失败", "error");
+                    }
+                } catch (err) {
+                    opShowStatus("切换会话失败：" + err.message, "error");
+                }
+            });
 
             opSessionList.appendChild(item);
         });
     }
 
     async function opLoadSessions() {
-        var previousSessions = opSessions.slice();
         opRenderSessionLoading();
         try {
             var res = await fetch(API_BASE + "/api/conversation", {
@@ -3060,15 +2137,12 @@ document.addEventListener("DOMContentLoaded", function (event) {
             opRenderSessions();
         } catch (err) {
             console.log("加载会话列表失败：", err);
-            opSessions = previousSessions;
+            opSessions = [];
             opRenderSessions();
-            opShowStatus("加载会话列表失败，已保留当前列表", "error");
         }
     }
 
     async function opLoadConfig() {
-        var loadRevision = ++opConfigLoadRevision;
-        var revisionSnapshot = Object.assign({}, opConfigFieldRevisions);
         try {
             var res = await fetch(API_BASE + "/api/conversation", {
                 method: "POST",
@@ -3077,19 +2151,39 @@ document.addEventListener("DOMContentLoaded", function (event) {
             });
             var data = await res.json();
             if (await guardAuthResponse(res, data)) return;
-            if (loadRevision !== opConfigLoadRevision) return;
-            if (!res.ok || data.error) throw new Error(data.error || "加载配置失败");
-            opAdoptServerConfig(data, revisionSnapshot);
-            if (opCurrentPage === "proactive") opLoadProactiveSchedules();
+            if (data.error) {
+                opShowStatus("加载配置失败：" + data.error, "error");
+                return;
+            }
+
+            // 基本信息
+            opCurrentSessionId = data.id || null;
+            currentSessionId = opCurrentSessionId;
+
+            // 会话显示
+            if (typeof data.segmentedOutputEnabled === "boolean") {
+                segConfig.enabled = data.segmentedOutputEnabled;
+                saveSegConfig();
+            } else {
+                loadSegConfig();
+            }
+            opSyncSegmentToggle();
+
+            // 对话模型
+            opSetChoiceValue("cfgAgentModel", opDisplayAgentModelId(data.agentModelId), opResolvedAgentDefaultModelId());
+            opUpdateAgentModelHero();
+
+            // 图片配置
+            var imgSettings = data.agentImageSettings || {};
+            opSetChoiceValue("cfgImgSize", imgSettings.size || "landscape", "landscape");
+            opSetChoiceValue("cfgImgArtistPresetId", imgSettings.artistPresetId || "default-anime", "default-anime");
+            opSetChoiceValue("cfgAgentImageModel", data.agentImageModelId || "", "");
+
+            opSyncMemorySettingsLink();
+
         } catch (err) {
             console.log("加载会话配置失败：", err);
-            if (loadRevision === opConfigLoadRevision) opShowStatus("加载配置失败：" + err.message, "error");
-        } finally {
-            if (loadRevision === opConfigLoadRevision) {
-                var hasCurrentConfig = !!opConfigLoadedSessionId && opConfigLoadedSessionId === (opCurrentSessionId || currentSessionId);
-                if (hasCurrentConfig) opSetInitialLoading(false);
-                else opSetInitialLoading(true, "读取设置失败，请关闭后重试");
-            }
+            opShowStatus("加载配置失败：" + err.message, "error");
         }
     }
 
@@ -3121,12 +2215,8 @@ document.addEventListener("DOMContentLoaded", function (event) {
         }
         opSetSessionActionBusy(true);
         try {
-            await opWaitForPendingConfigSaves();
             await opPostConversation({ action: "rename_session", name: name });
-            opSessions.forEach(function(session) {
-                if (session && session.id === opCurrentSessionId) session.name = name;
-            });
-            opRenderSessions();
+            await opLoadConfig();
             await opLoadSessions();
             opShowStatus("会话已重命名", "success");
         } catch (err) {
@@ -3142,12 +2232,9 @@ document.addEventListener("DOMContentLoaded", function (event) {
         opSetSessionActionBusy(true);
         opShowStatus("正在删除会话...");
         try {
-            await opWaitForPendingConfigSaves();
             await opPostConversation({ action: "delete_session" });
             opCurrentSessionId = null;
             currentSessionId = null;
-            opResetConfigStateForSession(null);
-            if (opOverlay.classList.contains("active")) opSetInitialLoading(true);
             await opLoadConfig();
             await opLoadSessions();
             await fetchInitialMessages();
@@ -3162,32 +2249,22 @@ document.addEventListener("DOMContentLoaded", function (event) {
     async function opOpenPanel() {
         opOverlay.classList.add("active");
         opShowStatus("");
-        var hasCurrentConfig = !!opConfigLoadedSessionId && opConfigLoadedSessionId === (opCurrentSessionId || currentSessionId);
-        opSetInitialLoading(!hasCurrentConfig);
         opSetPage(opCurrentPage || "session");
-        if (hasCurrentConfig) opApplyConfigPatchToControls(opDesiredConfig);
+        opSyncSegmentToggle();
         opRenderSessionLoading();
         opRenderAgentModelLoading();
         opRenderImageLoading();
-        if (opVisionModels.length) opRenderVisionModels(opDesiredConfig.agent_vision_model_id || "");
-        else opRenderVisionModelLoading();
         if (opPanelLoadPromise) return opPanelLoadPromise;
         opPanelLoadPromise = (async function() {
             var sessionsPromise = opLoadSessions();
-            var configPromise = opLoadConfig();
             await Promise.all([
                 opLoadSuccessRates(),
-                opLoadAgentModelOptions(false),
-                opLoadImageOptions(false),
-                opLoadVisionModelOptions(false),
-                configPromise
+                opLoadAgentModelOptions(),
+                opLoadImageOptions()
             ]);
-            opRenderAgentModels(opDisplayAgentModelId(opDesiredConfig.agent_model_id));
-            opRenderImageModels(opDesiredConfig.agent_image_model_id || "");
-            opRenderArtistPresets(opDesiredConfig.img_artist_preset_id || "default-anime");
-            opRenderVisionModels(opDesiredConfig.agent_vision_model_id || "");
-            opApplyConfigPatchToControls(opDesiredConfig);
-            await sessionsPromise;
+            opRenderAgentModels(opGetChoiceValue("cfgAgentModel", opResolvedAgentDefaultModelId()));
+            opRenderImageModels(opGetChoiceValue("cfgAgentImageModel", ""));
+            await Promise.all([opLoadConfig(), sessionsPromise]);
         })();
         try {
             await opPanelLoadPromise;
@@ -3205,21 +2282,6 @@ document.addEventListener("DOMContentLoaded", function (event) {
     opOverlay.addEventListener("click", function(e) {
         if (e.target === opOverlay) opClosePanel();
     });
-    if (opRandomProactiveToggle) opRandomProactiveToggle.addEventListener("change", function() { opSaveProactiveSetting("random", opRandomProactiveToggle.checked === true); });
-    if (opScheduledProactiveToggle) opScheduledProactiveToggle.addEventListener("change", function() { opSaveProactiveSetting("scheduled", opScheduledProactiveToggle.checked === true); });
-    if (opTimeAwarenessToggle) {
-        opTimeAwarenessToggle.addEventListener("change", function() {
-            var enabled = opTimeAwarenessToggle.checked === true;
-            if (!enabled && (opRandomProactiveEnabled || opScheduledProactiveEnabled)) {
-                opTimeAwarenessToggle.checked = true;
-                opShowStatus("请先关闭随机主动消息和定时主动消息", "error");
-                return;
-            }
-            opSyncProactiveNotice();
-            opQueueConfigPatch({ time_awareness_enabled: enabled });
-        });
-    }
-    if (opProactiveRefreshBtn) opProactiveRefreshBtn.addEventListener("click", opLoadProactiveSchedules);
     if (opSubnav) {
         opSubnav.addEventListener("click", function(e) {
             var target = e.target.closest("[data-op-target]");
@@ -3229,7 +2291,10 @@ document.addEventListener("DOMContentLoaded", function (event) {
     }
     if (opSegToggle) {
         opSegToggle.addEventListener("change", function() {
-            opSaveSegmentedOutput(opSegToggle.checked === true);
+            // 分段输出和其它配置统一由“保存”提交，避免独立请求与保存请求竞态。
+            segConfig.enabled = opSegToggle.checked === true;
+            saveSegConfig();
+            opSyncSegmentToggle();
         });
     }
     if (opSessionRenameBtn) opSessionRenameBtn.addEventListener("click", opRenameCurrentSession);
@@ -3237,12 +2302,10 @@ document.addEventListener("DOMContentLoaded", function (event) {
 
     async function opDoCreate() {
         if (opSessionActionBusy) return;
-        var initialPatch = opCollectConfigPatch();
         opSetSessionActionBusy(true);
         opCreateBtn.disabled = true;
         opShowStatus("正在创建会话...");
         try {
-            await opWaitForPendingConfigSaves();
             var res = await fetch(API_BASE + "/api/conversation", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
@@ -3253,16 +2316,15 @@ document.addEventListener("DOMContentLoaded", function (event) {
             if (data.status === "success" && data.session_id) {
                 opCurrentSessionId = data.session_id;
                 currentSessionId = data.session_id;
-                opResetConfigStateForSession(data.session_id);
                 opSyncMemorySettingsLink();
-                opApplyConfigPatchToControls(initialPatch);
+                loadSegConfig();
+                opSyncSegmentToggle();
                 var newSession = { id: data.session_id, name: "新会话" };
                 opSessions.unshift(newSession);
                 opRenderSessions();
-                opQueueConfigPatch(initialPatch);
-                await opWaitForPendingConfigSaves();
-                await Promise.all([opLoadConfig(), fetchInitialMessages()]);
-                opShowStatus("会话创建成功", "success");
+                opShowStatus("会话创建成功，正在更新配置...", "success");
+                // 创建成功后自动调用更新
+                await opDoUpdate(true);
             } else {
                 opShowStatus(data.error || "创建会话失败", "error");
             }
@@ -3275,10 +2337,42 @@ document.addEventListener("DOMContentLoaded", function (event) {
         }
     }
 
+    async function opDoUpdate(isAutoCall) {
+        opUpdateBtn.disabled = true;
+        opShowStatus(isAutoCall ? "正在更新配置..." : "正在更新配置...");
+        try {
+            var config = opCollectConfig();
+            var res = await fetch(API_BASE + "/api/conversation", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: makeBody(config)
+            });
+            var data = await res.json();
+            if (await guardAuthResponse(res, data)) return;
+            if (data.status === "success") {
+                segConfig.enabled = config.segmented_output_enabled === true;
+                saveSegConfig();
+                opShowStatus("配置更新成功", "success");
+                // 手动保存配置后退出操作面板；创建会话触发的内部保存仍留在当前页面。
+                if (!isAutoCall) {
+                    opClosePanel();
+                }
+                await fetchInitialMessages();
+            } else {
+                opShowStatus(data.error || "更新配置失败", "error");
+            }
+        } catch (err) {
+            console.log("更新配置失败：", err);
+            opShowStatus("更新配置失败：" + err.message, "error");
+        } finally {
+            opUpdateBtn.disabled = false;
+        }
+    }
+
     opCreateBtn.addEventListener("click", opDoCreate);
+    opUpdateBtn.addEventListener("click", function() { opDoUpdate(false); });
 
     async function startConnectedApp() {
-        var configRevisionSnapshot = Object.assign({}, opConfigFieldRevisions);
         try {
             var res = await fetch(API_BASE + "/api/conversation", {
                 method: "POST",
@@ -3287,8 +2381,8 @@ document.addEventListener("DOMContentLoaded", function (event) {
             });
             var config = await res.json();
             if (await guardAuthResponse(res, config)) return;
-            if (!res.ok || config.error) throw new Error(config.error || "加载会话配置失败");
-            opAdoptServerConfig(config, configRevisionSnapshot);
+            if (config && config.id) { currentSessionId = config.id; }
+            loadSegConfig();
             await fetchInitialMessages();
             startPolling();
         } catch (err) {

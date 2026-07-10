@@ -6,13 +6,13 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <title>Aliya</title>
     <link rel="stylesheet" href="css/base.css">
-    <link rel="stylesheet" href="css/index-m.css?v=20260721-13">
+    <link rel="stylesheet" href="css/index-m.css">
     <link rel="stylesheet" href="css/loading-m.css">
 
 
     <script src="js/loading-m.js" defer></script>
     <script src="js/message-renderer.js" defer></script>
-    <script src="js/index-m.js?v=20260721-11" defer></script>
+    <script src="js/index-m.js" defer></script>
 
 
     <!-- 音乐引用 -->
@@ -113,46 +113,23 @@
 
                         <!-- 会话消息 -->
                     </div>
-                    <div class="chat-loading-state" id="chatLoadingState" role="status" aria-live="polite" hidden>
-                        <span class="chat-loading-spinner" aria-hidden="true"></span>
-                        <span id="chatLoadingText">正在加载聊天记录...</span>
-                    </div>
                     <div class="right">
                         
                            
                         <!-- 等待动画 -->
                         <div class="right_3" id="playerText">
                             <div class="player-input-area" id="playerInputArea">
-                                <div class="player-compose-row">
-                                    <textarea id="playerInput" placeholder="输入消息..."></textarea>
-                                    <label class="image-upload-btn" title="添加图片" aria-label="添加图片">
-                                        <input id="imageInput" type="file" accept="image/*" hidden>
-                                        <span class="media-upload-icon" aria-hidden="true">
-                                            <svg viewBox="0 0 24 20" focusable="false">
-                                                <path d="M3.5 2.5h17a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2h-17a2 2 0 0 1-2-2v-11a2 2 0 0 1 2-2Z"/>
-                                                <circle cx="7.2" cy="7" r="1.8"/>
-                                                <path d="m3 15 5-4.5 3.3 2.8 3.2-3.2 6.5 5.4"/>
-                                            </svg>
-                                            <span class="media-upload-mark">+</span>
-                                        </span>
-                                        <span class="media-upload-label" aria-hidden="true">MEDIA</span>
-                                    </label>
-                                </div>
+                                <textarea id="playerInput" placeholder="输入消息..."></textarea>
                                 <button id="sendBtn">发送</button>
                             </div>
 
-                            <div class="loader" id="waitImg" role="status" aria-live="polite" hidden>
-                                <span class="wait-clock" aria-hidden="true">
-                                    <svg viewBox="0 0 120 120" focusable="false">
-                                        <g class="wait-clock-orbit">
-                                            <circle class="wait-clock-outer" cx="60" cy="62" r="49"></circle>
-                                            <circle class="wait-clock-dot" cx="60" cy="13" r="5.5"></circle>
-                                        </g>
-                                        <circle class="wait-clock-inner" cx="60" cy="62" r="35"></circle>
-                                        <path class="wait-clock-hand" d="M60 40v22h22"></path>
-                                    </svg>
-                                </span>
-                                <span id="waitText" class="wait-loader-text">正在等待 Aliya 回复...</span>
+                            <div class="loader" id="waitImg">
+                                <div class="rotator">
+                                    <div class="ball"></div>
+                                </div>
+                                <div class="loader-img">
+                                    <img src="./img/等待时间图.png" alt="">
+                                </div>
                             </div>
     
     
@@ -294,7 +271,6 @@
                 <button type="button" class="op-subnav-btn active" data-op-target="session">会话</button>
                 <button type="button" class="op-subnav-btn" data-op-target="model">模型</button>
                 <button type="button" class="op-subnav-btn" data-op-target="draw">生图</button>
-                <button type="button" class="op-subnav-btn" data-op-target="proactive">主动消息</button>
                 <button type="button" class="op-subnav-btn" data-op-target="memory">记忆</button>
             </div>
 
@@ -318,15 +294,6 @@
                         </div>
                         <div class="op-choice-list op-agent-model-list" id="cfgAgentModel" role="group" aria-label="对话模型">
                             <div class="op-image-loading">正在加载对话模型...</div>
-                        </div>
-                        <div class="op-vision-model" id="opVisionModelGroup" hidden>
-                            <span class="op-image-label">识图模型</span>
-                            <div class="op-vision-model-card">
-                                <select class="op-vision-model-select" id="cfgAgentVisionModel" aria-label="识图模型" disabled>
-                                    <option>正在加载识图模型...</option>
-                                </select>
-                                <span class="op-caption" id="opVisionModelCost">用于理解你发送的图片 · 识图费用：-</span>
-                            </div>
                         </div>
                     </div>
                 </div>
@@ -356,47 +323,6 @@
                             </div>
                         </div>
                     </div>
-                </div>
-            </div>
-
-            <div class="op-page" data-op-page="proactive">
-                <div class="op-section">
-                    <div class="op-proactive-hero">
-                        <div class="op-proactive-hero-icon">◌</div>
-                        <div>
-                            <div class="op-proactive-title">主动消息</div>
-                            <div class="op-proactive-caption">让 Aliya 在合适的时间主动联系你。</div>
-                        </div>
-                    </div>
-                </div>
-                <div class="op-proactive-notice" id="opProactiveNotice" hidden></div>
-                <div class="op-proactive-notice op-proactive-error" id="opProactiveLastError" hidden></div>
-                <div class="op-section op-proactive-settings">
-                    <label class="op-label">主动消息设置</label>
-                    <label class="op-proactive-switch-card">
-                        <input type="checkbox" id="opRandomProactiveToggle">
-                        <span class="op-proactive-switch-copy">
-                            <span class="op-proactive-switch-title">随机主动消息</span>
-                            <span class="op-proactive-switch-caption">会话静默 30 分钟后，按北京时间昼夜权重随机安排一次主动消息。</span>
-                        </span>
-                    </label>
-                    <label class="op-proactive-switch-card">
-                        <input type="checkbox" id="opScheduledProactiveToggle">
-                        <span class="op-proactive-switch-copy">
-                            <span class="op-proactive-switch-title">定时主动消息</span>
-                            <span class="op-proactive-switch-caption">Aliya 可自主创建、调整或取消最多 5 个定时计划。</span>
-                        </span>
-                    </label>
-                </div>
-                <div class="op-section">
-                    <div class="op-proactive-list-head">
-                        <div>
-                            <label class="op-label">当前定时计划</label>
-                            <div class="op-caption">计划由 Aliya 维护，你可以暂停、恢复或删除。</div>
-                        </div>
-                        <button type="button" class="op-icon-btn" id="opProactiveRefreshBtn" title="刷新计划" aria-label="刷新计划">↻</button>
-                    </div>
-                    <div class="op-proactive-list" id="opProactiveScheduleList"></div>
                 </div>
             </div>
 
@@ -439,14 +365,13 @@
                         <input type="checkbox" id="opSegToggle">
                         <span>分段输出</span>
                     </label>
-                    <label class="settings-toggle-row op-toggle-row">
-                        <input type="checkbox" id="opTimeAwarenessToggle">
-                        <span>时间感知</span>
-                    </label>
                     <div class="op-caption">开启后，完整回复仍保存为一条消息，但前端会按换行和完整语法结构逐段播放。</div>
                 </div>
             </div>
 
+            <div class="op-actions">
+                <button id="opUpdateBtn" class="op-btn op-btn-update" type="button">保存</button>
+            </div>
             <div class="op-status" id="opStatus"></div>
         </div>
     </div>
@@ -473,7 +398,17 @@
                     <option value="stars-annihilation">Stars' Annihilation</option>
                     <option value="tranquil-repose">Tranquil Repose</option>
                 </select>
-                <div class="op-caption">切换后立即生效，选择“不播放”可关闭背景音乐。</div>
+                <div class="op-caption">切换后立即生效，选择"不播放"可关闭背景音乐。</div>
+            </div>
+
+            <div class="op-section">
+                <label class="op-label" for="playModeSelect">播放模式</label>
+                <select id="playModeSelect" class="settings-input settings-select">
+                    <option value="single">单曲循环</option>
+                    <option value="random">随机播放</option>
+                    <option value="list">列表循环</option>
+                </select>
+                <div class="op-caption">单曲循环时播放上方选中的曲目；随机播放/列表循环时以全部曲目为播放池。</div>
             </div>
 
             <div class="op-actions">

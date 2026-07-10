@@ -8,8 +8,6 @@ document.addEventListener("DOMContentLoaded", function (event) {
     let stars = [];
     let isAnimating = false;
     let transitionInProgress = false;
-    let lastAnimationTime = null;
-    const STAR_REFERENCE_FRAME_MS = 1000 / 60;
 
     function safePlay(audio) {
         if (!audio) return;
@@ -42,8 +40,8 @@ document.addEventListener("DOMContentLoaded", function (event) {
             this.size = Math.random() * 1.0 + 0.2;
         }
 
-        update(elapsedMs) {
-            this.z -= this.speed * 15 * elapsedMs / STAR_REFERENCE_FRAME_MS;
+        update() {
+            this.z -= this.speed * 15;
             if (this.z <= 0) this.reset();
         }
 
@@ -73,23 +71,18 @@ document.addEventListener("DOMContentLoaded", function (event) {
             animationFrame = null;
         }
         isAnimating = false;
-        lastAnimationTime = null;
     }
 
-    function animate(timestamp) {
+    function animate() {
         if (!isAnimating || document.hidden || reduceMotionQuery.matches) {
             stopWarpAnimation();
             return;
         }
-        if (typeof timestamp !== 'number') timestamp = performance.now();
-        if (lastAnimationTime === null) lastAnimationTime = timestamp;
-        const elapsedMs = Math.min(Math.max(timestamp - lastAnimationTime, 0), 100);
-        lastAnimationTime = timestamp;
         ctx.fillStyle = 'rgba(0, 0, 0, 0.08)';
         ctx.fillRect(0, 0, canvas.width, canvas.height);
 
         stars.forEach(star => {
-            star.update(elapsedMs);
+            star.update();
             star.draw();
         });
 
