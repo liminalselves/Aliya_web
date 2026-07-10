@@ -15,7 +15,7 @@
 
     <!-- 音乐引用 -->
     <audio src="audio/开关.wav" id="buttonbgm" preload="auto"></audio>
-    <audio loop src="audio/背景.wav" id="mainbgm" preload="metadata"></audio>
+    <audio loop id="mainbgm" preload="metadata"></audio>
     <audio loop src="audio/RadioNoise.wav" id="noisebgm" preload="metadata"></audio>
     <audio loop src="audio/结局.wav" id="Litterbgm" preload="metadata"></audio>
 </head>
@@ -76,7 +76,7 @@
             <div class="content">
                 <div class="content_1">
                     <div class="left" id="aliyaText">
-                        <!-- 对话框：消息由 JS 动态从 API 加载 -->
+                        <!-- 会话消息由 JS 动态从 API 加载 -->
 
 
                     </div>
@@ -309,7 +309,7 @@
                     <label class="op-label">记忆功能</label>
                     <div class="op-memory-warning" role="note">
                         <strong>请务必开启记忆功能</strong>
-                        <p>若未开启，长对话中可能出现遗忘早期内容、用户偏好或重要约定等情况。</p>
+                        <p>若未开启，长会话中可能出现遗忘早期内容、用户偏好或重要约定等情况。</p>
                     </div>
                     <ol class="op-memory-steps">
                         <li>打开当前会话的 Misskey 官方页面。</li>
@@ -365,6 +365,21 @@
                 <label class="op-label">鉴权 Token</label>
                 <input type="password" id="segToken" class="settings-input"
                        autocomplete="off" spellcheck="false" placeholder="留空保持当前 Token">
+            </div>
+
+            <div class="op-section">
+                <label class="op-label" for="backgroundMusicSelect">背景音乐</label>
+                <select id="backgroundMusicSelect" class="settings-input settings-select">
+                    <option value="none">不播放</option>
+                    <option value="letter">Letter</option>
+                    <option value="aliya">Aliya</option>
+                    <option value="drift">Drift</option>
+                    <option value="response">Response</option>
+                    <option value="astral-sunset">Astral Sunset</option>
+                    <option value="stars-annihilation">Stars' Annihilation</option>
+                    <option value="tranquil-repose">Tranquil Repose</option>
+                </select>
+                <div class="op-caption">切换后立即生效，选择“不播放”可关闭背景音乐。</div>
             </div>
 
             <div class="op-actions">

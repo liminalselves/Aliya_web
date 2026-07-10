@@ -144,6 +144,17 @@ document.addEventListener("DOMContentLoaded", function (event) {
     var noisebgm = document.getElementById("noisebgm")
     var Litterbgm = document.getElementById("Litterbgm")
     const radioButton = document.querySelector('#radio-button');
+    const backgroundMusicStorageKey = "aliya_background_music";
+    const backgroundMusicSources = {
+        letter: "audio/music/letter.mp3",
+        aliya: "audio/music/aliya.mp3",
+        drift: "audio/music/drift.mp3",
+        response: "audio/music/response.mp3",
+        "astral-sunset": "audio/music/astral-sunset.mp3",
+        "stars-annihilation": "audio/music/stars-annihilation.mp3",
+        "tranquil-repose": "audio/music/tranquil-repose.mp3"
+    };
+    var activeBackgroundMusic = "letter";
 
     function safePlay(audio) {
         if (!audio) return;
@@ -152,6 +163,36 @@ document.addEventListener("DOMContentLoaded", function (event) {
             playPromise.catch(function() {});
         }
     }
+
+    function applyBackgroundMusic(value, playNow) {
+        var nextValue = value === "none" || Object.prototype.hasOwnProperty.call(backgroundMusicSources, value)
+            ? value
+            : "letter";
+        var nextSource = backgroundMusicSources[nextValue] || "";
+        activeBackgroundMusic = nextValue;
+        localStorage.setItem(backgroundMusicStorageKey, nextValue);
+
+        if (!mainbgm) return;
+        mainbgm.pause();
+        mainbgm.currentTime = 0;
+        if (nextSource) {
+            if (mainbgm.getAttribute("src") !== nextSource) {
+                mainbgm.src = nextSource;
+                mainbgm.load();
+            }
+            if (playNow && !radioButton.checked) safePlay(mainbgm);
+        } else {
+            mainbgm.removeAttribute("src");
+            mainbgm.load();
+        }
+    }
+
+    function playBackgroundMusic() {
+        if (activeBackgroundMusic !== "none") safePlay(mainbgm);
+    }
+
+    var savedBackgroundMusic = localStorage.getItem(backgroundMusicStorageKey) || "letter";
+    applyBackgroundMusic(savedBackgroundMusic, false);
 
     function setRem() {
         const designWidth = 1080; 
@@ -358,14 +399,14 @@ document.addEventListener("DOMContentLoaded", function (event) {
     function handleInterval(label) {
         if (label === 2 && radioButton.checked) { safePlay(Litterbgm); mainbgm.pause(); noisebgm.pause(); } 
         else if (label !== 2 && radioButton.checked) { safePlay(noisebgm); Litterbgm.pause(); mainbgm.pause(); } 
-        else if (!radioButton.checked) { noisebgm.pause(); Litterbgm.pause(); safePlay(mainbgm); }
+        else if (!radioButton.checked) { noisebgm.pause(); Litterbgm.pause(); playBackgroundMusic(); }
     }
     function buttonBgm() { safePlay(document.getElementById("buttonbgm")); }
     function togglePlay(audio) { audio.paused ? safePlay(audio) : audio.pause(); }
     function isPlaying(audio) { return !audio.paused && !audio.ended && audio.currentTime > 0; }
     radioButton.addEventListener('change', function () {
         if (this.checked) { mainbgm.pause(); checkCurrentInterval(++positon) } 
-        else { safePlay(mainbgm); noisebgm.pause(); Litterbgm.pause() }
+        else { playBackgroundMusic(); noisebgm.pause(); Litterbgm.pause() }
     });
 
     // ==================== 图片预览与缩放模块 (重构) ====================
@@ -1344,10 +1385,12 @@ document.addEventListener("DOMContentLoaded", function (event) {
     var settingsSaveBtn = document.getElementById("settingsSaveBtn");
     var settingsStatus = document.getElementById("settingsStatus");
     var segTokenInput = document.getElementById("segToken");
+    var backgroundMusicSelect = document.getElementById("backgroundMusicSelect");
 
     function openSettingsPanel() {
         segTokenInput.value = "";
         segTokenInput.placeholder = mskToken ? "留空保持当前 Token" : "Misskey API Token";
+        if (backgroundMusicSelect) backgroundMusicSelect.value = activeBackgroundMusic;
         settingsOverlay.classList.add("active");
         settingsStatus.textContent = "";
         settingsStatus.className = "op-status";
@@ -1362,6 +1405,12 @@ document.addEventListener("DOMContentLoaded", function (event) {
     settingsOverlay.addEventListener("click", function(e) {
         if (e.target === settingsOverlay) closeSettingsPanel();
     });
+    if (backgroundMusicSelect) {
+        backgroundMusicSelect.value = activeBackgroundMusic;
+        backgroundMusicSelect.addEventListener("change", function() {
+            applyBackgroundMusic(this.value, true);
+        });
+    }
 
     settingsSaveBtn.addEventListener("click", async function() {
         // token 处理
@@ -1910,7 +1959,7 @@ document.addEventListener("DOMContentLoaded", function (event) {
         opSessionList.innerHTML =
             '<div class="op-session-loading">' +
                 '<span class="op-session-loading-spinner"></span>' +
-                '<span>正在加载对话...</span>' +
+                '<span>正在加载会话...</span>' +
             '</div>';
     }
 
@@ -1918,7 +1967,7 @@ document.addEventListener("DOMContentLoaded", function (event) {
         opSessionList.innerHTML = "";
         var visibleSessions = opSessions.filter(function(session) { return !!session; });
         if (visibleSessions.length === 0) {
-            opSessionList.innerHTML = '<div class="op-session-empty">暂无对话记录</div>';
+            opSessionList.innerHTML = '<div class="op-session-empty">暂无会话记录</div>';
             return;
         }
         visibleSessions.forEach(function(session) {
@@ -2212,8 +2261,10 @@ document.addEventListener("DOMContentLoaded", function (event) {
                 segConfig.enabled = config.segmented_output_enabled === true;
                 saveSegConfig();
                 opShowStatus("配置更新成功", "success");
-                // 保存成功后立即应用到当前消息，并退出操作面板。
-                opClosePanel();
+                // 手动保存配置后退出操作面板；创建会话触发的内部保存仍留在当前页面。
+                if (!isAutoCall) {
+                    opClosePanel();
+                }
                 await fetchInitialMessages();
             } else {
                 opShowStatus(data.error || "更新配置失败", "error");

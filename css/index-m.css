@@ -1856,6 +1856,13 @@ body {
     font-size: 7.2rem;
     color: #bebebe;
 }
+.settings-select {
+    cursor: pointer;
+}
+.settings-select option {
+    background: #202020;
+    color: #efefef;
+}
 
 .settings-toggle-row input[type="checkbox"] {
     width: 4rem;
@@ -1934,5 +1941,486 @@ body {
         animation-iteration-count: 1 !important;
         scroll-behavior: auto !important;
         transition-duration: 0.01ms !important;
+    }
+}
+
+/* ==================== 移动端 UI 优化 ====================
+ * 移动端页面原本沿用大字号 rem 比例，在窄屏上会挤压聊天区和输入区。
+ * 这里统一使用与视口相关的尺寸，保证文字、按钮和弹窗在不同手机宽度下稳定。
+ */
+:root {
+    --mobile-page-gap: clamp(6px, 1.8vw, 10px);
+    --mobile-panel: #292929;
+    --mobile-panel-raised: #343434;
+    --mobile-border: rgba(255, 255, 255, 0.12);
+    --mobile-text: #f1f1f1;
+    --mobile-muted: #a9a9a9;
+    --mobile-accent: #d98a38;
+}
+
+html {
+    font-size: clamp(5px, 0.8vw, 6px);
+}
+
+body {
+    background: #1d1d1d;
+    color: var(--mobile-text);
+    -webkit-tap-highlight-color: transparent;
+}
+
+/* 启动连接页不应出现外层滚动条，滚动只交给聊天区和弹窗内部。 */
+body > .content,
+.new-page .content_main > .content {
+    overflow: hidden;
+}
+
+.settings-overlay {
+    overflow: hidden;
+}
+
+.new-page,
+.content_main,
+.new-page > .content_main > .content,
+.content_1 {
+    min-height: 0;
+}
+
+.content_main {
+    padding: var(--mobile-page-gap);
+    gap: var(--mobile-page-gap);
+}
+
+.top-bar {
+    gap: 8px;
+    padding: 2px 2px 8px;
+}
+
+.top-heart {
+    width: 54px;
+    height: 54px;
+    border-radius: 13px;
+    border-color: var(--mobile-border);
+}
+
+.heart-number {
+    font-size: 22px;
+}
+
+.top-status-bars {
+    gap: 4px;
+}
+
+.status-bar-item {
+    gap: 6px;
+}
+
+.sb-label {
+    width: 30px;
+    font-size: 11px;
+}
+
+.sb-track {
+    height: 6px;
+    border-radius: 999px;
+}
+
+.head {
+    height: 56px;
+    gap: 4px;
+    padding: 4px;
+    border: 1px solid var(--mobile-border);
+    border-radius: 13px;
+    background: var(--mobile-panel);
+}
+
+.head li,
+.head li button {
+    height: 46px;
+    line-height: 1;
+}
+
+.head li {
+    border-radius: 9px;
+}
+
+.head li button {
+    padding: 0 4px;
+    font-size: clamp(13px, 3.8vw, 17px);
+    color: #d5d5d5;
+    background: var(--mobile-panel-raised);
+}
+
+.head li:last-child {
+    width: 50px;
+    margin-right: 0;
+}
+
+.head li:last-child button {
+    width: 50px;
+}
+
+.head li:last-child img {
+    width: 28px;
+    height: 28px;
+    object-fit: contain;
+}
+
+.new-page .content_main > .content {
+    gap: var(--mobile-page-gap);
+}
+
+.content .left {
+    padding: 4px 6px 8px;
+    border: 1px solid var(--mobile-border);
+    border-radius: 13px;
+    background: #242424;
+    scrollbar-width: thin;
+}
+
+.content .left::-webkit-scrollbar {
+    width: 5px;
+}
+
+.content .left,
+.right .right_3,
+.op-panel,
+.op-page.active,
+.op-session-list,
+.op-model-list,
+.op-agent-model-list,
+.op-artist-grid,
+.settings-panel {
+    scrollbar-width: thin;
+    scrollbar-color: #5b5b5b #202020;
+}
+
+.content .left::-webkit-scrollbar-track,
+.right .right_3::-webkit-scrollbar-track,
+.op-panel::-webkit-scrollbar-track,
+.op-page.active::-webkit-scrollbar-track,
+.op-session-list::-webkit-scrollbar-track,
+.op-model-list::-webkit-scrollbar-track,
+.op-agent-model-list::-webkit-scrollbar-track,
+.op-artist-grid::-webkit-scrollbar-track,
+.settings-panel::-webkit-scrollbar-track {
+    background: #202020;
+    border-radius: 999px;
+}
+
+.content .left::-webkit-scrollbar-thumb,
+.right .right_3::-webkit-scrollbar-thumb,
+.op-panel::-webkit-scrollbar-thumb,
+.op-page.active::-webkit-scrollbar-thumb,
+.op-session-list::-webkit-scrollbar-thumb,
+.op-model-list::-webkit-scrollbar-thumb,
+.op-agent-model-list::-webkit-scrollbar-thumb,
+.op-artist-grid::-webkit-scrollbar-thumb,
+.settings-panel::-webkit-scrollbar-thumb {
+    background: #5b5b5b;
+    border: 1px solid #202020;
+    border-radius: 999px;
+}
+
+.content .left li,
+.content .left .player {
+    width: fit-content;
+    max-width: 92%;
+    min-height: 0;
+    margin-top: 12px;
+    padding: 10px 13px;
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    border-radius: 13px;
+    color: var(--mobile-text);
+    background: #3a3a3a;
+    font-size: clamp(16px, 3.7vw, 21px);
+    letter-spacing: 0.01em;
+    line-height: 1.52;
+    overflow-wrap: anywhere;
+    box-sizing: border-box;
+}
+
+.content .left .player {
+    margin-left: auto;
+    margin-right: 0;
+}
+
+.content .left li:last-child {
+    margin-bottom: 4px;
+}
+
+.message-rich-content {
+    line-height: 1.52;
+}
+
+.message-rich-content p {
+    margin: 0.65em 0;
+}
+
+.message-rich-content a,
+.mfm-sparkle,
+.mfm-mention,
+.mfm-hashtag,
+.mfm-emoji {
+    color: #e2a15d;
+}
+
+.new-page .content_main > .content > .content_1 > .right {
+    flex: 0 0 auto;
+}
+
+.right .right_3 {
+    height: auto;
+    overflow: visible;
+    border: 1px solid var(--mobile-border);
+    border-radius: 13px;
+    background: var(--mobile-panel);
+}
+
+.player-input-area {
+    gap: 8px;
+    padding: 8px;
+}
+
+.player-input-area textarea {
+    height: 72px;
+    padding: 10px 12px;
+    border: 1px solid var(--mobile-border);
+    border-radius: 10px;
+    font-size: 16px;
+    line-height: 1.45;
+    background: #252525;
+}
+
+.player-input-area button {
+    height: 42px;
+    border-radius: 10px;
+    color: #fff7ef;
+    background: #5b5b5b;
+    font-size: 15px;
+    font-weight: 600;
+}
+
+.player-input-area button:active,
+.head li button:active,
+.op-btn:active,
+.op-subnav-btn:active {
+    transform: translateY(1px);
+}
+
+/* 移动端弹窗：保留完整功能，但降低字号和内边距，避免内容被截断。 */
+.op-overlay,
+.settings-overlay {
+    padding: 12px;
+    align-items: center;
+}
+
+.op-panel,
+.settings-panel,
+.auth-overlay .auth-panel {
+    width: min(100%, 560px);
+    max-height: calc(100dvh - 24px);
+    padding: 44px 14px 16px;
+    border-radius: 16px;
+    font-size: 14px;
+}
+
+.op-panel {
+    width: min(86vw, 520px);
+    height: min(700px, 82dvh);
+    max-height: calc(100dvh - 48px);
+    min-height: 0;
+    padding: 0 14px 16px;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+}
+
+.settings-panel {
+    width: min(86vw, 520px);
+    max-height: calc(100dvh - 48px);
+    min-height: 0;
+    padding: 0 14px 16px;
+    overflow-x: hidden;
+    overflow-y: auto;
+    scrollbar-gutter: stable;
+    display: flex;
+    flex-direction: column;
+}
+
+.op-panel > .op-page.active {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-x: hidden;
+    overflow-y: auto;
+    padding-right: 4px;
+}
+
+.op-close-btn {
+    top: 8px;
+    right: 10px;
+    z-index: 2;
+    width: 40px;
+    height: 40px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 10px;
+    font-size: 26px;
+}
+
+.op-title {
+    min-height: 56px;
+    margin: 0 44px 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 21px;
+    line-height: 1;
+}
+
+.op-subnav {
+    gap: 6px;
+    margin-bottom: 14px;
+}
+
+.op-subnav-btn {
+    min-height: 40px;
+    border-radius: 8px;
+    font-size: 13px;
+}
+
+.op-section {
+    margin-bottom: 18px;
+}
+
+.op-label {
+    margin-bottom: 10px;
+    padding-bottom: 6px;
+    font-size: 16px;
+}
+
+.op-model-config,
+.op-image-config,
+.op-memory-guidance {
+    gap: 12px;
+}
+
+.op-model-hero,
+.op-choice-card,
+.op-artist-card,
+.op-model-card,
+.op-memory-warning {
+    border-radius: 10px;
+    padding: 10px;
+}
+
+.op-hero-item,
+.op-model-meta-chip {
+    padding: 6px 8px;
+}
+
+.op-hero-kicker,
+.op-model-meta-kicker,
+.op-image-label,
+.op-config-item span,
+.op-caption,
+.op-session-loading,
+.op-session-empty {
+    font-size: 12px;
+}
+
+.op-hero-value,
+.op-model-meta-value,
+.op-choice-card,
+.op-segment-btn,
+.op-artist-card,
+.op-session-item,
+.op-select-trigger,
+.op-select-option,
+.op-btn,
+.op-status,
+.settings-toggle-row,
+.settings-input,
+.op-config-item input,
+.op-config-item select {
+    font-size: 14px;
+}
+
+.op-choice-card,
+.op-segment-btn,
+.op-artist-card {
+    min-height: 44px;
+    padding: 9px 10px;
+}
+
+.op-session-list {
+    height: 240px;
+    max-height: none;
+    min-height: 0;
+    overflow-y: auto;
+}
+
+.op-session-item {
+    padding: 10px;
+}
+
+.op-config-grid {
+    gap: 10px;
+}
+
+.op-config-item input,
+.op-config-item select,
+.settings-input,
+.op-select-trigger {
+    min-height: 40px;
+    padding: 8px 10px;
+    border-radius: 8px;
+}
+
+.op-actions,
+.op-actions-inline {
+    gap: 8px;
+}
+
+.op-btn {
+    min-height: 40px;
+    padding: 9px 14px;
+    border-radius: 9px;
+}
+
+.auth-overlay .auth-title {
+    margin-bottom: 14px;
+    font-size: 22px;
+}
+
+.auth-overlay .auth-message,
+.auth-overlay .auth-status {
+    font-size: 14px;
+    line-height: 1.55;
+}
+
+.auth-overlay .auth-btn,
+.auth-overlay .auth-token-input,
+.auth-overlay .auth-save-btn {
+    padding: 10px 14px;
+    border-radius: 9px;
+    font-size: 14px;
+}
+
+@media (max-width: 380px) {
+    .head li button {
+        font-size: 12px;
+    }
+
+    .head li:last-child,
+    .head li:last-child button {
+        width: 42px;
+    }
+
+    .content .left li,
+    .content .left .player {
+        max-width: 94%;
+        padding: 9px 11px;
+        font-size: 15px;
     }
 }

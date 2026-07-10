@@ -1749,6 +1749,13 @@ body {
 .settings-input:focus {
     border-color: #d6740b;
 }
+.settings-select {
+    cursor: pointer;
+}
+.settings-select option {
+    background: #202020;
+    color: #efefef;
+}
 .settings-toggle-row {
     display: flex;
     align-items: center;
@@ -1785,4 +1792,74 @@ body {
         scroll-behavior: auto !important;
         transition-duration: 0.01ms !important;
     }
+}
+
+/* 统一聊天区与 Operation 内部滚动条，避免出现浏览器默认白色滚动条。 */
+.content .left,
+.right .right_3,
+.op-panel,
+.op-page.active,
+.op-session-list,
+.op-model-list,
+.op-agent-model-list,
+.op-artist-grid,
+.settings-panel {
+    scrollbar-width: thin;
+    scrollbar-color: #5b5b5b #202020;
+}
+
+.content .left::-webkit-scrollbar,
+.right .right_3::-webkit-scrollbar,
+.op-panel::-webkit-scrollbar,
+.op-page.active::-webkit-scrollbar,
+.op-session-list::-webkit-scrollbar,
+.op-model-list::-webkit-scrollbar,
+.op-agent-model-list::-webkit-scrollbar,
+.op-artist-grid::-webkit-scrollbar,
+.settings-panel::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+}
+
+.content .left::-webkit-scrollbar-track,
+.right .right_3::-webkit-scrollbar-track,
+.op-panel::-webkit-scrollbar-track,
+.op-page.active::-webkit-scrollbar-track,
+.op-session-list::-webkit-scrollbar-track,
+.op-model-list::-webkit-scrollbar-track,
+.op-agent-model-list::-webkit-scrollbar-track,
+.op-artist-grid::-webkit-scrollbar-track,
+.settings-panel::-webkit-scrollbar-track {
+    background: #202020;
+    border-radius: 999px;
+}
+
+.content .left::-webkit-scrollbar-thumb,
+.right .right_3::-webkit-scrollbar-thumb,
+.op-panel::-webkit-scrollbar-thumb,
+.op-page.active::-webkit-scrollbar-thumb,
+.op-session-list::-webkit-scrollbar-thumb,
+.op-model-list::-webkit-scrollbar-thumb,
+.op-agent-model-list::-webkit-scrollbar-thumb,
+.op-artist-grid::-webkit-scrollbar-thumb,
+.settings-panel::-webkit-scrollbar-thumb {
+    background: #5b5b5b;
+    border: 2px solid #202020;
+    border-radius: 999px;
+}
+
+.op-panel {
+    height: min(720px, calc(100vh - 6rem));
+    min-height: 0;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+}
+
+.op-panel > .op-page.active {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-x: hidden;
+    overflow-y: auto;
+    padding-right: 0.4rem;
 }
