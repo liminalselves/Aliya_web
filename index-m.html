@@ -53,6 +53,100 @@
 
     </div>
 
+    <div class="new-page">
+        <div class="content_main">
+            <!-- 顶部状态栏 -->
+            <div class="top-bar">
+                <div class="top-heart">
+                    <canvas id="topEcgCanvas"></canvas>
+                    <span class="heart-number">75</span>
+                </div>
+                <div class="top-status-bars">
+                    <div class="status-bar-item">
+                        <span class="sb-label">O2</span>
+                        <div class="sb-track">
+                            <div class="sb-fill o2" style="width:91%"></div>
+                        </div>
+                    </div>
+                    <div class="status-bar-item">
+                        <span class="sb-label">H2O</span>
+                        <div class="sb-track">
+                            <div class="sb-fill h2o" style="width:43%"></div>
+                        </div>
+                    </div>
+                    <div class="status-bar-item">
+                        <span class="sb-label">ENG</span>
+                        <div class="sb-track">
+                            <div class="sb-fill eng" style="width:53%"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="head">
+
+                <li>
+                    <button id="operationBtn">Operation</button>
+                </li>
+
+                <li>
+                    <button style="color: #646464;">SOS</button>
+                </li>
+
+                <li>
+                    <button style="color: #646464;">FCS</button>
+                </li>
+
+                <li>
+                    <button id="settingsBtn">Settings</button>
+                </li>
+
+                <li>
+                    <button class="menu-toggle"><img src="img/展开.png" alt=""></button>
+                </li>
+
+            </div>
+
+            <div class="content">
+                <div class="content_1">
+                    <div class="left" id="aliyaText">
+
+                        <!-- 对话框 -->
+                    </div>
+                    <div class="right">
+                        
+                           
+                        <!-- 等待动画 -->
+                        <div class="right_3" id="playerText">
+                            <div class="player-input-area" id="playerInputArea">
+                                <textarea id="playerInput" placeholder="输入消息..."></textarea>
+                                <button id="sendBtn">发送</button>
+                            </div>
+
+                            <div class="loader" id="waitImg">
+                                <div class="rotator">
+                                    <div class="ball"></div>
+                                </div>
+                                <div class="loader-img">
+                                    <img src="./img/等待时间图.png" alt="">
+                                </div>
+                            </div>
+    
+    
+                        </div>
+    
+                    </div>
+                </div>
+    
+            </div>
+    
+        </div>
+    
+    </div>
+
+   
+</div>
+
     <!-- 遮罩层 -->
     <div class="menu-overlay"></div>
     <!-- 菜单内容 -->
@@ -65,7 +159,7 @@
                             ALIYA
                         </li>
                         <li class="hrm">
-                            <div id="number">75</div>
+                            <div id="number" class="heart-number">75</div>
                             <canvas id="ecgCanvas"></canvas>
                         </li>
                         <li class="title">
@@ -156,7 +250,6 @@
                                 <div class="slider-track">
 
                                     <div class="slider-thumb"></div>
-                                    <!-- 区间标记示例：0-100为低频区，100-200为中频区，200-300为高频区 -->
                                 </div>
                             </div>
 
@@ -168,67 +261,6 @@
             </div>
         </div>
     </div>
-
-
-    <div class="new-page">
-        <div class="content_main">
-            <div class="head">
-
-                <li>
-                    <button id="operationBtn">Operation</button>
-                </li>
-
-                <li>
-                    <button id="settingsBtn">Settings</button>
-                </li>
-
-                <li>
-                    <button class="menu-toggle"><img src="img/展开.png" alt=""></button>
-                </li>
-
-            </div>
-            <div class="content">
-                <div class="content_1">
-                    <div class="left" id="aliyaText">
-
-                        <!-- 对话框 -->
-                    </div>
-                    <div class="right">
-                        
-                           
-                        <!-- 等待动画 -->
-                        <div class="right_3" id="playerText">
-                            <div class="player-input-area" id="playerInputArea">
-                                <textarea id="playerInput" placeholder="输入消息..."></textarea>
-                                <button id="sendBtn">发送</button>
-                            </div>
-
-                            <div class="loader" id="waitImg">
-                                <div class="rotator">
-                                    <div class="ball"></div>
-                                </div>
-                                <div class="loader-img">
-                                    <img src="./img/等待时间图.png" alt="">
-                                </div>
-                            </div>
-    
-    
-                        </div>
-    
-                    </div>
-                </div>
-    
-            </div>
-    
-        </div>
-    
-    </div>
-
-   
-</div>
-   
-
-
 
     <div class="op-overlay" id="opOverlay">
         <div class="op-panel" id="opPanel">
@@ -236,13 +268,13 @@
             <h2 class="op-title">Operation</h2>
 
             <div class="op-subnav" id="opSubnav" role="tablist" aria-label="Operation 子页面">
-                <button type="button" class="op-subnav-btn active" data-op-target="model">模型</button>
+                <button type="button" class="op-subnav-btn active" data-op-target="session">会话</button>
+                <button type="button" class="op-subnav-btn" data-op-target="model">模型</button>
                 <button type="button" class="op-subnav-btn" data-op-target="draw">生图</button>
                 <button type="button" class="op-subnav-btn" data-op-target="memory">记忆</button>
-                <button type="button" class="op-subnav-btn" data-op-target="session">会话</button>
             </div>
 
-            <div class="op-page active" data-op-page="model">
+            <div class="op-page" data-op-page="model">
                 <div class="op-section">
                     <label class="op-label">对话模型</label>
                     <div class="op-model-config">
@@ -313,7 +345,7 @@
                 </div>
             </div>
 
-            <div class="op-page" data-op-page="session">
+            <div class="op-page active" data-op-page="session">
                 <div class="op-section">
                     <label class="op-label">会话列表</label>
                     <div class="op-session-list" id="opSessionList"></div>

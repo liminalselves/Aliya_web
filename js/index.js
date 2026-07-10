@@ -1410,7 +1410,7 @@ document.addEventListener("DOMContentLoaded", function (event) {
     var opImageModels = [];
     var opArtistPresets = [];
     var opModelSuccessRates = {};
-    var opCurrentPage = "model";
+    var opCurrentPage = "session";
     var opPanelLoadPromise = null;
     var opSegmentSaving = false;
     var opSessionActionBusy = false;
@@ -1442,7 +1442,7 @@ document.addEventListener("DOMContentLoaded", function (event) {
     }
 
     function opSetPage(page) {
-        opCurrentPage = page || "model";
+        opCurrentPage = page || "session";
         document.querySelectorAll(".op-page[data-op-page]").forEach(function(el) {
             el.classList.toggle("active", el.getAttribute("data-op-page") === opCurrentPage);
         });
@@ -2108,7 +2108,7 @@ document.addEventListener("DOMContentLoaded", function (event) {
     async function opOpenPanel() {
         opOverlay.classList.add("active");
         opShowStatus("");
-        opSetPage(opCurrentPage || "model");
+        opSetPage(opCurrentPage || "session");
         opSyncSegmentToggle();
         opRenderSessionLoading();
         opRenderAgentModelLoading();

@@ -191,12 +191,14 @@ document.addEventListener("DOMContentLoaded", function (event) {
         });
     }
 
-    // 心电图模块开始 (保持原样)
-    const canvas = document.getElementById('ecgCanvas');
-    const ctx = canvas.getContext('2d');
-    canvas.width = 260;
-    canvas.height = 200;
-    const ecgPoints = [
+    // 心电图模块开始 (支持多 canvas)
+    var ecgCanvases = [
+        document.getElementById('ecgCanvas'),
+        document.getElementById('topEcgCanvas')
+    ];
+    ecgCanvases.forEach(function(c) { c.width = 260; c.height = 200; });
+    var ecgCtxs = ecgCanvases.map(function(c) { return c.getContext('2d'); });
+    var ecgPoints = [
         { x: 0, y: 100 }, { x: 80, y: 100 }, { x: 90, y: 90 }, { x: 95, y: 110 },
         { x: 100, y: 70 }, { x: 110, y: 130 }, { x: 130, y: 40 }, { x: 150, y: 160 },
         { x: 170, y: 70 }, { x: 180, y: 130 }, { x: 185, y: 90 }, { x: 190, y: 120 },
@@ -217,15 +219,17 @@ document.addEventListener("DOMContentLoaded", function (event) {
     }
 
     function drawStaticEcg() {
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-        ctx.beginPath();
-        ecgPoints.forEach(function(point, index) {
-            if (index === 0) ctx.moveTo(point.x, point.y);
-            else ctx.lineTo(point.x, point.y);
+        ecgCtxs.forEach(function(ctx, i) {
+            ctx.clearRect(0, 0, ecgCanvases[i].width, ecgCanvases[i].height);
+            ctx.beginPath();
+            ecgPoints.forEach(function(point, index) {
+                if (index === 0) ctx.moveTo(point.x, point.y);
+                else ctx.lineTo(point.x, point.y);
+            });
+            ctx.strokeStyle = "rgba(255, 255, 255, 0.8)";
+            ctx.lineWidth = 2;
+            ctx.stroke();
         });
-        ctx.strokeStyle = "rgba(255, 255, 255, 0.8)";
-        ctx.lineWidth = 2;
-        ctx.stroke();
     }
 
     function startEcgAnimation() {
@@ -241,7 +245,7 @@ document.addEventListener("DOMContentLoaded", function (event) {
         startEcgAnimation();
     }
     
-    function drawTrailWithGradient() {
+    function drawTrailWithGradient(ctx) {
         let previousPoint = null;
         const reversedPoints = [...tailPoints].reverse(); 
         ctx.globalCompositeOperation = 'screen';
@@ -250,8 +254,8 @@ document.addEventListener("DOMContentLoaded", function (event) {
             const alpha = Math.max(0, 1 - index * GRADIENT_FALLOFF); 
             if (previousPoint) {
                 const gradient = ctx.createLinearGradient(point.x, point.y, previousPoint.x, previousPoint.y);
-                gradient.addColorStop(0, `rgba(255,255,255,${alpha})`);
-                gradient.addColorStop(1, `rgba(255,255,255,${alpha * 1})`);
+                gradient.addColorStop(0, "rgba(255,255,255," + alpha + ")");
+                gradient.addColorStop(1, "rgba(255,255,255," + (alpha * 1) + ")");
                 ctx.beginPath();
                 ctx.moveTo(point.x, point.y);
                 ctx.lineTo(previousPoint.x, previousPoint.y);
@@ -267,7 +271,7 @@ document.addEventListener("DOMContentLoaded", function (event) {
     function draw() {
         ecgAnimationFrame = null;
         if (!ecgShouldAnimate()) return;
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ecgCtxs.forEach(function(ctx) { ctx.clearRect(0, 0, 260, 200); });
         const startPoint = ecgPoints[currentIndex];
         const endPoint = ecgPoints[currentIndex + 1];
         const dx = endPoint.x - startPoint.x;
@@ -278,13 +282,9 @@ document.addEventListener("DOMContentLoaded", function (event) {
         if (currentIndex === ecgPoints.length - 2 && progress > 0.95) {
             if (!isLooping) { tailPoints.push(null); isLooping = true; }
         } else { isLooping = false; }
-        tailPoints.push({ x, y });
+        tailPoints.push({ x: x, y: y });
         if (tailPoints.length > tailMaxLength) tailPoints.shift();
-        drawTrailWithGradient();  
-        ctx.beginPath();
-        ctx.arc(x, y, 1, 0, Math.PI * 2);
-        ctx.fillStyle = '#fff';
-        ctx.fill();
+        ecgCtxs.forEach(function(c) { drawTrailWithGradient(c); c.beginPath(); c.arc(x, y, 1, 0, Math.PI * 2); c.fillStyle = '#fff'; c.fill(); });
         currentPos += speed;
         if (currentPos >= Math.sqrt(dx * dx + dy * dy)) {
             currentPos = 0;
@@ -305,7 +305,12 @@ document.addEventListener("DOMContentLoaded", function (event) {
     const ranges = { low: { min: 63, max: 68 }, medium: { min: 70, max: 75 }, high: { min: 79, max: 85 } };
     let currentRange = ranges.medium;
     function getRandomInRange() { return Math.floor(Math.random() * (currentRange.max - currentRange.min + 1)) + currentRange.min; }
-    function updateDisplay() { document.getElementById('number').textContent = getRandomInRange(); }
+    function updateDisplay() { 
+        var val = getRandomInRange();
+        document.querySelectorAll('.heart-number').forEach(function(el) {
+            el.textContent = val;
+        });
+    }
     let vitalsTimer = null;
     function syncVitalsTimer() {
         if (vitalsTimer) {
@@ -1450,7 +1455,7 @@ document.addEventListener("DOMContentLoaded", function (event) {
     var opImageModels = [];
     var opArtistPresets = [];
     var opModelSuccessRates = {};
-    var opCurrentPage = "model";
+    var opCurrentPage = "session";
     var opPanelLoadPromise = null;
     var opSegmentSaving = false;
     var opSessionActionBusy = false;
@@ -1482,7 +1487,7 @@ document.addEventListener("DOMContentLoaded", function (event) {
     }
 
     function opSetPage(page) {
-        opCurrentPage = page || "model";
+        opCurrentPage = page || "session";
         document.querySelectorAll(".op-page[data-op-page]").forEach(function(el) {
             el.classList.toggle("active", el.getAttribute("data-op-page") === opCurrentPage);
         });
@@ -2148,7 +2153,7 @@ document.addEventListener("DOMContentLoaded", function (event) {
     async function opOpenPanel() {
         opOverlay.classList.add("active");
         opShowStatus("");
-        opSetPage(opCurrentPage || "model");
+        opSetPage(opCurrentPage || "session");
         opSyncSegmentToggle();
         opRenderSessionLoading();
         opRenderAgentModelLoading();

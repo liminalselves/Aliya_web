@@ -1319,7 +1319,7 @@ def debug_style_enforcement():
 
 if __name__ == "__main__":
     logging.info("服务启动，等待前端设置 token...")
-    host = os.environ.get("ALIYA_HOST", "127.0.0.1")
+    host = os.environ.get("ALIYA_HOST", "0.0.0.0")
     port = int(os.environ.get("ALIYA_PORT", "4000"))
     debug = os.environ.get("ALIYA_DEBUG", "").strip().lower() in {"1", "true", "yes", "on"}
     app.run(host=host, port=port, debug=debug, use_reloader=False)

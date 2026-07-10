@@ -246,13 +246,13 @@
             <h2 class="op-title">Operation</h2>
 
             <div class="op-subnav" id="opSubnav" role="tablist" aria-label="Operation 子页面">
-                <button type="button" class="op-subnav-btn active" data-op-target="model">模型</button>
+                <button type="button" class="op-subnav-btn active" data-op-target="session">会话</button>
+                <button type="button" class="op-subnav-btn" data-op-target="model">模型</button>
                 <button type="button" class="op-subnav-btn" data-op-target="draw">生图</button>
                 <button type="button" class="op-subnav-btn" data-op-target="memory">记忆</button>
-                <button type="button" class="op-subnav-btn" data-op-target="session">会话</button>
             </div>
 
-            <div class="op-page active" data-op-page="model">
+            <div class="op-page" data-op-page="model">
                 <div class="op-section">
                     <label class="op-label">对话模型</label>
                     <div class="op-model-config">
@@ -323,7 +323,7 @@
                 </div>
             </div>
 
-            <div class="op-page" data-op-page="session">
+            <div class="op-page active" data-op-page="session">
                 <div class="op-section">
                     <label class="op-label">会话列表</label>
                     <div class="op-session-list" id="opSessionList"></div>
