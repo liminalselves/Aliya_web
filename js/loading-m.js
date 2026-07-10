@@ -1,9 +1,19 @@
 document.addEventListener("DOMContentLoaded", function (event) {
-   
+    let transitionInProgress = false;
+
+    function safePlay(audio) {
+        if (!audio) return;
+        const playPromise = audio.play();
+        if (playPromise && typeof playPromise.catch === 'function') {
+            playPromise.catch(() => {});
+        }
+    }
 
 
 
     async function startTransition() {
+        if (transitionInProgress) return;
+        transitionInProgress = true;
 
         const mainContent = document.getElementById('mainContent');
         const animContainer = document.getElementById('animationContainer');
@@ -19,7 +29,7 @@ document.addEventListener("DOMContentLoaded", function (event) {
         newPage.classList.add('visible');
         
         var mainbgm = document.getElementById("mainbgm")
-        mainbgm.play()
+        safePlay(mainbgm)
     }
     
     document.querySelector('.launch-btn').addEventListener('click', startTransition);

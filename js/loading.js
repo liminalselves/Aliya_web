@@ -3,16 +3,30 @@ document.addEventListener("DOMContentLoaded", function (event) {
     const canvas = document.getElementById('warpCanvas');
     const ctx = canvas.getContext('2d');
     let animationFrame;
+    const reduceMotionQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
     
-    const STAR_COUNT = 400;
+    const MAX_STAR_COUNT = 400;
     let stars = [];
     let isAnimating = false;
+    let transitionInProgress = false;
+
+    function safePlay(audio) {
+        if (!audio) return;
+        const playPromise = audio.play();
+        if (playPromise && typeof playPromise.catch === 'function') {
+            playPromise.catch(() => {});
+        }
+    }
     
     function resizeCanvas() {
         canvas.width = window.innerWidth;
         canvas.height = window.innerHeight;
     }
     window.addEventListener('resize', resizeCanvas);
+
+    function starCountForViewport() {
+        return Math.min(MAX_STAR_COUNT, Math.max(120, Math.floor((canvas.width * canvas.height) / 5000)));
+    }
     
     class Star {
         constructor() {
@@ -47,12 +61,24 @@ document.addEventListener("DOMContentLoaded", function (event) {
     
     function initStars() {
         stars = [];
-        for (let i = 0; i < STAR_COUNT; i++) {
+        for (let i = 0; i < starCountForViewport(); i++) {
             stars.push(new Star());
         }
     }
+
+    function stopWarpAnimation() {
+        if (animationFrame) {
+            cancelAnimationFrame(animationFrame);
+            animationFrame = null;
+        }
+        isAnimating = false;
+    }
     
     function animate() {
+        if (!isAnimating || document.hidden || reduceMotionQuery.matches) {
+            stopWarpAnimation();
+            return;
+        }
         ctx.fillStyle = 'rgba(0, 0, 0, 0.08)';
         ctx.fillRect(0, 0, canvas.width, canvas.height);
         
@@ -65,6 +91,8 @@ document.addEventListener("DOMContentLoaded", function (event) {
     }
     
     async function startTransition() {
+        if (transitionInProgress) return;
+        transitionInProgress = true;
 
         const mainContent = document.getElementById('mainContent');
         const animContainer = document.getElementById('animationContainer');
@@ -74,11 +102,14 @@ document.addEventListener("DOMContentLoaded", function (event) {
         mainContent.style.display = 'none'
         animContainer.style.opacity = '1';
         resizeCanvas();
-        initStars();
-        animate();
+        if (!reduceMotionQuery.matches) {
+            initStars();
+            isAnimating = true;
+            animate();
+        }
     
         // 纯星空持续时间延长至2秒
-        await new Promise(r => setTimeout(r, 1000));
+        await new Promise(r => setTimeout(r, reduceMotionQuery.matches ? 0 : 1000));
     
         animContainer.style.transition = 'opacity 2s ease-out';
         animContainer.style.opacity = '0';
@@ -86,11 +117,11 @@ document.addEventListener("DOMContentLoaded", function (event) {
         await new Promise(r => setTimeout(r, 500));
         newPage.classList.add('visible');
     
-        cancelAnimationFrame(animationFrame);
+        stopWarpAnimation();
         canvas.width = 0;
         canvas.height = 0;
         var mainbgm = document.getElementById("mainbgm")
-        mainbgm.play()
+        safePlay(mainbgm)
     }
     
     document.querySelector('.launch-btn').addEventListener('click', startTransition);

@@ -9,14 +9,15 @@
     <link rel="stylesheet" href="css/index.css">
     <link rel="stylesheet" href="css/loading.css">
 
-    <script src="js/loading.js"></script>
-    <script src="js/index.js"></script>
+    <script src="js/loading.js" defer></script>
+    <script src="js/message-renderer.js" defer></script>
+    <script src="js/index.js" defer></script>
 
     <!-- 音乐引用 -->
-    <audio src="audio/开关.wav" id="buttonbgm"></audio>
-    <audio loop src="audio/背景.wav" id="mainbgm"></audio>
-    <audio loop src="audio/RadioNoise.wav" id="noisebgm"></audio>
-    <audio loop src="audio/结局.wav" id="Litterbgm"></audio>
+    <audio src="audio/开关.wav" id="buttonbgm" preload="auto"></audio>
+    <audio loop src="audio/背景.wav" id="mainbgm" preload="metadata"></audio>
+    <audio loop src="audio/RadioNoise.wav" id="noisebgm" preload="metadata"></audio>
+    <audio loop src="audio/结局.wav" id="Litterbgm" preload="metadata"></audio>
 </head>
 
 
@@ -41,9 +42,9 @@
 
 
     <div class="setting">
-        <div class="overlay" id="overlay" onclick="closeModal()"></div>
+        <div class="overlay" id="legacyOverlay"></div>
         <div class="modal" id="myModal">
-            <span class="close-btn"  onclick="closeModal()">&times;</span>
+            <span class="close-btn">&times;</span>
             
              <!-- <button id="setting" >调试</button> -->
             
@@ -242,94 +243,113 @@
     <div class="op-overlay" id="opOverlay">
         <div class="op-panel" id="opPanel">
             <span class="op-close-btn" id="opCloseBtn">&times;</span>
-            <h2 class="op-title">会话管理</h2>
+            <h2 class="op-title">Operation</h2>
 
-            <!-- 对话列表 -->
-            <div class="op-section">
-                <label class="op-label">对话列表</label>
-                <div class="op-session-list" id="opSessionList">
-                </div>
+            <div class="op-subnav" id="opSubnav" role="tablist" aria-label="Operation 子页面">
+                <button type="button" class="op-subnav-btn active" data-op-target="model">模型</button>
+                <button type="button" class="op-subnav-btn" data-op-target="draw">生图</button>
+                <button type="button" class="op-subnav-btn" data-op-target="memory">记忆</button>
+                <button type="button" class="op-subnav-btn" data-op-target="session">会话</button>
             </div>
 
-            <!-- 图片配置 -->
-            <div class="op-section">
-                <label class="op-label">图片配置</label>
-                <div class="op-config-grid">
-                    <div class="op-config-item">
-                        <span>尺寸</span>
-                        <select id="cfgImgSize">
-                            <option value="landscape">横向</option>
-                            <option value="portrait">纵向</option>
-                            <option value="square">方形</option>
-                        </select>
-                    </div>
-                    <div class="op-config-item">
-                        <span>采样步数</span>
-                        <input type="number" id="cfgImgSteps" min="1" max="100" value="28">
-                    </div>
-                    <div class="op-config-item">
-                        <span>引导强度</span>
-                        <input type="number" id="cfgImgScale" min="0" max="20" step="0.5" value="5">
-                    </div>
-                    <div class="op-config-item">
-                        <span>CFG重缩放</span>
-                        <input type="number" id="cfgImgCfgRescale" min="0" max="1" step="0.1" value="0">
-                    </div>
-                    <div class="op-config-item">
-                        <span>采样器</span>
-                        <select id="cfgImgSampler">
-                            <option value="k_euler_ancestral">k_euler_ancestral</option>
-                            <option value="k_euler">k_euler</option>
-                            <option value="k_dpm_2_ancestral">k_dpm_2_ancestral</option>
-                            <option value="k_dpmpp_2s_ancestral">k_dpmpp_2s_ancestral</option>
-                            <option value="k_dpmpp_2m">k_dpmpp_2m</option>
-                        </select>
-                    </div>
-                    <div class="op-config-item">
-                        <span>噪声调度</span>
-                        <select id="cfgImgNoiseSchedule">
-                            <option value="karras">karras</option>
-                            <option value="exponential">exponential</option>
-                            <option value="simple">simple</option>
-                        </select>
-                    </div>
-                    <div class="op-config-item">
-                        <span>画风预设</span>
-                        <select id="cfgImgArtistPresetId">
-                            <option value="default-anime">二次元插画</option>
-                            <option value="warm-game-portrait">暖色系游戏立绘</option>
-                            <option value="soft-fantasy">轻柔幻想风</option>
-                            <option value="clear-sweet">清透甜绘风</option>
-                            <option value="light-thick-paint">轻厚涂二次元</option>
-                            <option value="line-manga">日系线稿漫画</option>
-                        </select>
-                    </div>
-                    <div class="op-config-item">
-                        <span>图片模型ID</span>
-                        <input type="text" id="cfgAgentImageModelId" value="aob0wkxmi3">
-                    </div>
-                </div>
-            </div>
-
-            <!-- 文风配置 -->
-            <div class="op-section">
-                <label class="op-label">文风配置</label>
-                <div class="op-config-item op-style-select-wrapper">
-                    <span>文风</span>
-                    <div class="op-custom-select" id="opStyleSelect">
-                        <div class="op-select-trigger" id="opStyleTrigger">
-                            <span class="op-select-text" id="opStyleText">加载中...</span>
-                            <span class="op-select-arrow">&#9662;</span>
+            <div class="op-page active" data-op-page="model">
+                <div class="op-section">
+                    <label class="op-label">对话模型</label>
+                    <div class="op-model-config">
+                        <div class="op-model-hero">
+                            <span class="op-hero-item">
+                                <span class="op-hero-kicker">当前模型</span>
+                                <span class="op-hero-value" id="opAgentModelCurrent">-</span>
+                            </span>
+                            <span class="op-hero-item" id="opAgentCreditWrap" hidden>
+                                <span class="op-hero-kicker">余额</span>
+                                <span class="op-hero-value" id="opAgentCreditBalance">-</span>
+                            </span>
+                            <span class="op-hero-item" id="opAgentCostWrap" hidden>
+                                <span class="op-hero-kicker">预计费用</span>
+                                <span class="op-hero-value" id="opAgentExpectedCost">-</span>
+                            </span>
                         </div>
-                        <div class="op-select-dropdown" id="opStyleDropdown"></div>
+                        <div class="op-choice-list op-agent-model-list" id="cfgAgentModel" role="group" aria-label="对话模型">
+                            <div class="op-image-loading">正在加载对话模型...</div>
+                        </div>
                     </div>
+                </div>
+            </div>
+
+            <div class="op-page" data-op-page="draw">
+                <div class="op-section">
+                    <label class="op-label">生图配置</label>
+                    <div class="op-image-config">
+                        <div class="op-image-group">
+                            <span class="op-image-label">生图模型</span>
+                            <div class="op-choice-list op-model-list" id="cfgAgentImageModel" role="group" aria-label="生图模型">
+                                <div class="op-image-loading">正在加载模型...</div>
+                            </div>
+                        </div>
+                        <div class="op-image-group">
+                            <span class="op-image-label">默认尺寸</span>
+                            <div class="op-segmented" id="cfgImgSize" role="group" aria-label="默认尺寸">
+                                <button type="button" class="op-segment-btn active" data-value="landscape">横图</button>
+                                <button type="button" class="op-segment-btn" data-value="portrait">竖图</button>
+                            </div>
+                        </div>
+                        <div class="op-image-group">
+                            <span class="op-image-label">画师串</span>
+                            <div class="op-artist-grid" id="cfgImgArtistPresetId" role="group" aria-label="画师串">
+                                <div class="op-image-loading">正在加载画师串...</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="op-page" data-op-page="memory">
+                <div class="op-section op-memory-guidance">
+                    <label class="op-label">记忆功能</label>
+                    <div class="op-memory-warning" role="note">
+                        <strong>请务必开启记忆功能</strong>
+                        <p>若未开启，长对话中可能出现遗忘早期内容、用户偏好或重要约定等情况。</p>
+                    </div>
+                    <ol class="op-memory-steps">
+                        <li>打开当前会话的 Misskey 官方页面。</li>
+                        <li>进入“记忆”子页面，选择需要的长期记忆模式。</li>
+                        <li>启用长期记忆并保存设置。</li>
+                    </ol>
+                    <a id="opMemorySettingsLink" class="op-btn op-btn-update op-memory-link"
+                       href="https://misskey.liminalselves.top/agents" target="_blank" rel="noopener noreferrer">
+                        前往 Misskey 设置记忆
+                    </a>
+                </div>
+            </div>
+
+            <div class="op-page" data-op-page="session">
+                <div class="op-section">
+                    <label class="op-label">会话列表</label>
+                    <div class="op-session-list" id="opSessionList"></div>
+                </div>
+                <div class="op-section">
+                    <label class="op-label">会话管理</label>
+                    <div class="op-actions op-actions-inline">
+                        <button id="opCreateBtn" class="op-btn op-btn-create" type="button">创建会话</button>
+                        <button id="opSessionRenameBtn" class="op-btn op-btn-update" type="button">重命名会话</button>
+                        <button id="opSessionDeleteBtn" class="op-btn op-btn-create" type="button">删除会话</button>
+                    </div>
+                    <div class="op-caption">重命名和删除只影响当前 Aliya 会话。删除后无法撤销。</div>
+                </div>
+                <div class="op-section">
+                    <label class="op-label">消息显示</label>
+                    <label class="settings-toggle-row op-toggle-row">
+                        <input type="checkbox" id="opSegToggle">
+                        <span>分段输出</span>
+                    </label>
+                    <div class="op-caption">开启后，完整回复仍保存为一条消息，但前端会按换行和完整语法结构逐段播放。</div>
                 </div>
             </div>
 
             <!-- 操作按钮 -->
             <div class="op-actions">
-                <button id="opCreateBtn" class="op-btn op-btn-create">创建会话</button>
-                <button id="opUpdateBtn" class="op-btn op-btn-update">更新配置</button>
+                <button id="opUpdateBtn" class="op-btn op-btn-update" type="button">保存</button>
             </div>
             <div class="op-status" id="opStatus"></div>
         </div>
@@ -339,35 +359,12 @@
     <div class="settings-overlay" id="settingsOverlay">
         <div class="settings-panel" id="settingsPanel">
             <span class="op-close-btn" id="settingsCloseBtn">&times;</span>
-            <h2 class="op-title">设置</h2>
+            <h2 class="op-title">Settings</h2>
 
             <div class="op-section">
                 <label class="op-label">鉴权 Token</label>
-                <input type="text" id="segToken" class="settings-input"
-                       placeholder="Misskey API Token">
-            </div>
-
-            <div class="op-section">
-                <label class="op-label">分段回复</label>
-                <label class="settings-toggle-row">
-                    <input type="checkbox" id="segToggle">
-                    <span>启用分段回复</span>
-                </label>
-            </div>
-
-            <div class="op-section">
-                <label class="op-label">分割正则表达式</label>
-                <input type="text" id="segRegex" class="settings-input"
-                       placeholder="[。！？!?\n]" value="[。！？!?\n]">
-            </div>
-
-            <div class="op-section">
-                <label class="op-label">每条消息延迟（毫秒）</label>
-                <div class="settings-delay-row">
-                    <input type="number" id="segDelayMin" class="settings-input" value="800" min="0">
-                    <span>~</span>
-                    <input type="number" id="segDelayMax" class="settings-input" value="2000" min="0">
-                </div>
+                <input type="password" id="segToken" class="settings-input"
+                       autocomplete="off" spellcheck="false" placeholder="留空保持当前 Token">
             </div>
 
             <div class="op-actions">
