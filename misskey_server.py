@@ -11,7 +11,7 @@ from misskey__agent_server import app
 
 if __name__ == "__main__":
     host = os.environ.get("ALIYA_HOST", "127.0.0.1")
-    port = int(os.environ.get("ALIYA_PORT", "5000"))
+    port = int(os.environ.get("ALIYA_PORT", "4000"))
     debug = os.environ.get("ALIYA_DEBUG", "").strip().lower() in {
         "1",
         "true",

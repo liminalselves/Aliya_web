@@ -65,19 +65,19 @@ python misskey_server.py
 默认监听地址为：
 
 ```text
-http://127.0.0.1:5000
+http://127.0.0.1:4000
 ```
 
 也可以通过环境变量修改监听配置：
 
 ```powershell
 $env:ALIYA_HOST = "127.0.0.1"
-$env:ALIYA_PORT = "5000"
+$env:ALIYA_PORT = "4000"
 $env:ALIYA_DEBUG = "0"
 python misskey_server.py
 ```
 
-启动后访问 `http://127.0.0.1:5000/`。首次使用时，在页面的 `Settings` 中完成 Misskey 授权或填写 Token。
+启动后访问 `http://127.0.0.1:4000/`。首次使用时，在页面的 `Settings` 中完成 Misskey 授权或填写 Token。
 
 ## 页面说明
 
@@ -87,7 +87,7 @@ python misskey_server.py
 
 ## 配置与安全
 
-- 前端默认请求后端 `http://127.0.0.1:5000`，如需部署到其他地址，需要同步调整 `js/index.js` 和 `js/index-m.js` 中的 `API_BASE`。
+- 前端默认请求后端 `http://127.0.0.1:4000`，如需部署到其他地址，需要同步调整 `js/index.js` 和 `js/index-m.js` 中的 `API_BASE`。
 - Misskey Token 由页面提交到本地 Flask 服务，不应写入源码、README 或日志。
 - 后端默认只监听 `127.0.0.1`，如需局域网访问，请明确设置 `ALIYA_HOST` 并配置防火墙及访问控制。
 - 当前服务会在进程内维护部分会话、消息和元数据缓存，重启服务后本地运行态缓存可能被清空。
@@ -96,7 +96,7 @@ python misskey_server.py
 
 ### 页面打开但无法对话
 
-确认 Flask 后端正在运行，并检查浏览器是否能访问 `http://127.0.0.1:5000`。随后在 `Settings` 中重新完成授权或验证 Token。
+确认 Flask 后端正在运行，并检查浏览器是否能访问 `http://127.0.0.1:4000`。随后在 `Settings` 中重新完成授权或验证 Token。
 
 ### 模型列表为空
 

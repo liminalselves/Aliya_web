@@ -42,9 +42,9 @@ METADATA_CACHE_MAX_ENTRIES = 256
 app = Flask(__name__)
 app.config["MAX_CONTENT_LENGTH"] = MAX_REQUEST_BYTES
 LOCAL_CORS_ORIGINS = [
-    "http://127.0.0.1:5000",
-    "http://localhost:5000",
-    "http://[::1]:5000",
+    "http://127.0.0.1:4000",
+    "http://localhost:4000",
+    "http://[::1]:4000",
 ]
 CORS(app, resources={r"/api/*": {"origins": LOCAL_CORS_ORIGINS}})
 
@@ -1320,6 +1320,6 @@ def debug_style_enforcement():
 if __name__ == "__main__":
     logging.info("服务启动，等待前端设置 token...")
     host = os.environ.get("ALIYA_HOST", "127.0.0.1")
-    port = int(os.environ.get("ALIYA_PORT", "5000"))
+    port = int(os.environ.get("ALIYA_PORT", "4000"))
     debug = os.environ.get("ALIYA_DEBUG", "").strip().lower() in {"1", "true", "yes", "on"}
     app.run(host=host, port=port, debug=debug, use_reloader=False)
