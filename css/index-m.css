@@ -1269,7 +1269,7 @@ body {
     z-index: 2000;
     justify-content: center;
     align-items: center;
-    padding: 4rem;
+    padding: 0;
     box-sizing: border-box;
 }
 
@@ -1281,15 +1281,15 @@ body {
 .op-panel,
 .settings-panel {
     position: relative;
-    width: min(94vw, 96rem);
-    max-height: 86vh;
+    width: 75vw;
+    max-height: 70vh;
     overflow-y: auto;
     background: #2d2d2d;
     border: 0.2rem solid #555;
     border-radius: 2rem;
-    padding: 6rem 4rem 4rem;
+    padding: 4rem 3rem 3rem;
     color: #efefef;
-    font-size: 3.2rem;
+    font-size: 7.2rem;
     box-sizing: border-box;
 }
 
@@ -1302,13 +1302,13 @@ body {
     top: 2rem;
     right: 3rem;
     cursor: pointer;
-    font-size: 7rem;
+    font-size: 11rem;
     color: #999;
     line-height: 1;
 }
 
 .op-title {
-    font-size: 5rem;
+    font-size: 9rem;
     margin-bottom: 4rem;
     color: #efefef;
     text-align: center;
@@ -1329,7 +1329,7 @@ body {
     color: #efefef;
     cursor: pointer;
     font: inherit;
-    font-size: 2.8rem;
+    font-size: 6.8rem;
     font-weight: 700;
     transition: background 0.15s ease, color 0.15s ease;
 }
@@ -1353,7 +1353,7 @@ body {
 
 .op-label {
     display: block;
-    font-size: 3.6rem;
+    font-size: 7.6rem;
     color: #bebebe;
     margin-bottom: 2rem;
     border-bottom: 0.2rem solid #444;
@@ -1391,14 +1391,14 @@ body {
 .op-hero-kicker {
     flex-shrink: 0;
     color: #999;
-    font-size: 2.25rem;
+    font-size: 6.25rem;
     font-weight: 600;
 }
 
 .op-hero-value {
     min-width: 0;
     color: #efefef;
-    font-size: 2.8rem;
+    font-size: 6.8rem;
     font-weight: 700;
     overflow-wrap: anywhere;
 }
@@ -1420,7 +1420,7 @@ body {
     justify-content: center;
     gap: 1.5rem;
     color: #999;
-    font-size: 2.8rem;
+    font-size: 6.8rem;
 }
 
 .op-session-loading-spinner {
@@ -1447,7 +1447,7 @@ body {
     margin: 1rem 0;
     background: #3a3a3a;
     border-radius: 1.5rem;
-    font-size: 3rem;
+    font-size: 7rem;
 }
 
 .op-session-item.active {
@@ -1473,7 +1473,7 @@ body {
 .op-session-item .session-msg,
 .op-session-item .session-id {
     color: #888;
-    font-size: 2.6rem;
+    font-size: 3.14rem;
 }
 
 .op-config-grid {
@@ -1489,7 +1489,7 @@ body {
 }
 
 .op-config-item span {
-    font-size: 2.8rem;
+    font-size: 6.8rem;
     color: #999;
 }
 
@@ -1502,7 +1502,7 @@ body {
     border: 0.2rem solid #555;
     border-radius: 1.2rem;
     color: #efefef;
-    font-size: 3rem;
+    font-size: 7rem;
     padding: 1.6rem 2rem;
     outline: none;
     font-family: inherit;
@@ -1522,7 +1522,7 @@ body {
 
 .op-image-label {
     color: #bebebe;
-    font-size: 2.8rem;
+    font-size: 6.8rem;
     font-weight: 600;
 }
 
@@ -1553,7 +1553,7 @@ body {
     color: #efefef;
     cursor: pointer;
     font: inherit;
-    font-size: 2.7rem;
+    font-size: 6.7rem;
     line-height: 1.25;
     outline: none;
     padding: 1.8rem 2rem;
@@ -1584,7 +1584,7 @@ body {
     border-radius: 999px;
     background: rgba(255, 255, 255, 0.08);
     color: #bebebe;
-    font-size: 2.3rem;
+    font-size: 6.3rem;
     line-height: 1;
     padding: 1.1rem 1.8rem;
 }
@@ -1609,7 +1609,7 @@ body {
     border-radius: 1.2rem;
     background: rgba(0, 0, 0, 0.18);
     color: #bebebe;
-    font-size: 2.25rem;
+    font-size: 6.25rem;
     line-height: 1.2;
     padding: 0.9rem 1.2rem;
 }
@@ -1711,7 +1711,7 @@ body {
 
 .op-caption {
     color: #999;
-    font-size: 2.55rem;
+    font-size: 6.55rem;
     line-height: 1.5;
     margin-top: 1.6rem;
 }
@@ -1736,19 +1736,19 @@ body {
 .op-memory-warning strong {
     display: block;
     color: #f0f0f0;
-    font-size: 3.2rem;
+    font-size: 7.2rem;
 }
 
 .op-memory-warning p {
     margin: 0.8rem 0 0;
-    font-size: 2.7rem;
+    font-size: 6.7rem;
 }
 
 .op-memory-steps {
     margin: 0;
     padding-left: 4rem;
     color: #b8b8b8;
-    font-size: 2.7rem;
+    font-size: 6.7rem;
     line-height: 1.8;
 }
 
@@ -1777,7 +1777,7 @@ body {
     border: 0.2rem solid #555;
     border-radius: 1.2rem;
     padding: 1.8rem 2rem;
-    font-size: 3rem;
+    font-size: 7rem;
 }
 
 .op-select-dropdown {
@@ -1801,7 +1801,7 @@ body {
 
 .op-select-option {
     padding: 1.8rem 2rem;
-    font-size: 3rem;
+    font-size: 7rem;
 }
 
 .op-select-option.selected {
@@ -1821,7 +1821,7 @@ body {
     border: 0;
     border-radius: 1.5rem;
     padding: 2rem 4rem;
-    font-size: 3.4rem;
+    font-size: 7.4rem;
     color: #efefef;
 }
 
@@ -1836,7 +1836,7 @@ body {
 .op-status {
     text-align: center;
     margin-top: 3rem;
-    font-size: 3rem;
+    font-size: 7rem;
     min-height: 4rem;
     color: #bebebe;
 }
@@ -1853,7 +1853,7 @@ body {
     display: flex;
     align-items: center;
     gap: 2rem;
-    font-size: 3.2rem;
+    font-size: 7.2rem;
     color: #bebebe;
 }
 
@@ -1883,12 +1883,12 @@ body {
 }
 
 .auth-overlay .auth-title {
-    font-size: 5rem;
+    font-size: 9rem;
     margin-bottom: 3rem;
 }
 
 .auth-overlay .auth-message {
-    font-size: 3.2rem;
+    font-size: 7.2rem;
     line-height: 1.7;
     margin-bottom: 4rem;
 }
@@ -1900,19 +1900,19 @@ body {
 .auth-overlay .auth-btn {
     border-radius: 1.5rem;
     padding: 2rem 4rem;
-    font-size: 3.4rem;
+    font-size: 7.4rem;
 }
 
 .auth-overlay .auth-status {
     min-height: 4rem;
     margin-top: 3rem;
-    font-size: 3rem;
+    font-size: 7rem;
 }
 
 .auth-overlay .auth-token-input {
     border-radius: 1.5rem;
     padding: 2rem 3rem;
-    font-size: 3.4rem;
+    font-size: 7.4rem;
 }
 
 .auth-overlay .auth-manual-form {
@@ -1923,7 +1923,7 @@ body {
     width: 100%;
     border-radius: 1.5rem;
     padding: 2rem 4rem;
-    font-size: 3.4rem;
+    font-size: 7.4rem;
 }
 
 @media (prefers-reduced-motion: reduce) {
