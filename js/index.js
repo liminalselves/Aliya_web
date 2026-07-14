@@ -1929,6 +1929,9 @@ document.addEventListener("DOMContentLoaded", function (event) {
         { id: "light-thick-paint", name: "轻厚涂二次元", thumbnailUrl: null },
         { id: "line-manga", name: "日系线稿漫画", thumbnailUrl: null }
     ];
+    var opStyles = [];
+    var opCurrentStyleId = "";
+    var opStyleLoaded = false;
 
     function opShowStatus(msg, type) {
         opStatus.textContent = msg;
@@ -2151,6 +2154,7 @@ document.addEventListener("DOMContentLoaded", function (event) {
             opRenderProactiveSchedules();
             if (opCurrentSessionId) opLoadProactiveSchedules();
         }
+        if (opCurrentPage === "style" && !opStyleLoaded) opLoadStyleOptions();
     }
 
     function opSyncMemorySettingsLink() {
@@ -2595,6 +2599,65 @@ document.addEventListener("DOMContentLoaded", function (event) {
         opQueueConfigPatch({ segmented_output_enabled: enabled });
     }
 
+    async function opLoadStyleOptions() {
+        var group = document.getElementById("cfgStyle");
+        if (group) group.innerHTML = '<div class="op-image-loading"><span class="op-loading-spinner"></span><span>正在加载文风...</span></div>';
+        try {
+            var data = await opFetchConversationAction("public_list");
+            if (data && !data.error && Array.isArray(data)) {
+                opStyles = data;
+            } else {
+                opStyles = [];
+            }
+        } catch (err) {
+            console.log("加载文风列表失败：", err);
+            opStyles = [];
+        }
+        opStyleLoaded = true;
+        opRenderStyles(opCurrentStyleId);
+    }
+
+    function opRenderStyles(selectedId) {
+        var group = document.getElementById("cfgStyle");
+        if (!group) return;
+        group.innerHTML = "";
+        if (opStyles.length === 0) {
+            group.innerHTML = '<div class="op-image-loading"><span>暂无可选文风</span></div>';
+            return;
+        }
+        opStyles.forEach(function(style) {
+            var value = style.id || "";
+            var card = document.createElement("button");
+            card.type = "button";
+            card.className = "op-choice-card op-style-card";
+            card.setAttribute("data-value", value);
+
+            var head = document.createElement("div");
+            head.className = "op-model-card-head";
+
+            var title = document.createElement("span");
+            title.className = "op-choice-title op-model-title";
+            title.textContent = style.name || style.id || "未命名文风";
+
+            var action = document.createElement("span");
+            action.className = "op-choice-action";
+            action.textContent = value === selectedId ? "已启用" : "选择";
+
+            head.appendChild(title);
+            head.appendChild(action);
+            card.appendChild(head);
+
+            if (style.summary) {
+                var summary = document.createElement("div");
+                summary.className = "op-style-summary";
+                summary.textContent = style.summary;
+                card.appendChild(summary);
+            }
+            group.appendChild(card);
+        });
+        if (selectedId) opSetChoiceValue("cfgStyle", selectedId);
+    }
+
     function opGetChoiceValue(groupId, fallbackValue) {
         var group = document.getElementById(groupId);
         if (!group) return fallbackValue || "";
@@ -2661,6 +2724,7 @@ document.addEventListener("DOMContentLoaded", function (event) {
     opBindChoiceGroup("cfgAgentImageModel");
     opBindChoiceGroup("cfgImgSize");
     opBindChoiceGroup("cfgImgArtistPresetId");
+    opBindChoiceGroup("cfgStyle");
 
     var opVisionModelSelect = document.getElementById("cfgAgentVisionModel");
     if (opVisionModelSelect) {
@@ -2681,7 +2745,11 @@ document.addEventListener("DOMContentLoaded", function (event) {
             segmented_output_enabled: segConfig.enabled === true,
             time_awareness_enabled: opTimeAwarenessToggle?.checked === true,
             random_proactive_enabled: opRandomProactiveEnabled === true,
-            scheduled_proactive_enabled: opScheduledProactiveEnabled === true
+            scheduled_proactive_enabled: opScheduledProactiveEnabled === true,
+            dialogueStyleId: (function() {
+                var active = document.querySelector("#cfgStyle .active[data-value]");
+                return active ? active.getAttribute("data-value") : "";
+            })()
         };
         if (opAgentModels.length > 0) {
             var defaultAgentModelId = opResolvedAgentDefaultModelId();
@@ -2731,6 +2799,10 @@ document.addEventListener("DOMContentLoaded", function (event) {
             opScheduledProactiveEnabled = patch.scheduled_proactive_enabled === true;
             if (opScheduledProactiveToggle) opScheduledProactiveToggle.checked = opScheduledProactiveEnabled;
         }
+        if (opHasOwn(patch, "dialogue_style_id")) {
+            opCurrentStyleId = patch.dialogue_style_id || "";
+            if (opStyleLoaded && opCurrentStyleId) opSetChoiceValue("cfgStyle", opCurrentStyleId);
+        }
         if (opTimeAwarenessToggle) opTimeAwarenessToggle.disabled = opRandomProactiveEnabled || opScheduledProactiveEnabled;
         opSyncProactiveNotice();
         opRenderProactiveSchedules();
@@ -2747,7 +2819,8 @@ document.addEventListener("DOMContentLoaded", function (event) {
             segmented_output_enabled: !!(data && data.segmentedOutputEnabled === true),
             time_awareness_enabled: !(data && data.timeAwarenessEnabled === false),
             random_proactive_enabled: !!(data && data.randomProactiveEnabled === true),
-            scheduled_proactive_enabled: !!(data && data.scheduledProactiveEnabled === true)
+            scheduled_proactive_enabled: !!(data && data.scheduledProactiveEnabled === true),
+            dialogue_style_id: data && data.dialogueStyleId || ""
         };
     }
 
@@ -3230,6 +3303,43 @@ document.addEventListener("DOMContentLoaded", function (event) {
         }
     }
 
+<<<<<<< HEAD
+=======
+    async function opDoUpdate(isAutoCall) {
+        opUpdateBtn.disabled = true;
+        opShowStatus(isAutoCall ? "正在更新配置..." : "正在更新配置...");
+        try {
+            var config = opCollectConfig();
+            // 创建新会话的自动更新不传入文风，文风配置只对单会话生效
+            if (isAutoCall) delete config.dialogueStyleId;
+            var res = await fetch(API_BASE + "/api/conversation", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: makeBody(config)
+            });
+            var data = await res.json();
+            if (await guardAuthResponse(res, data)) return;
+            if (data.status === "success") {
+                segConfig.enabled = config.segmented_output_enabled === true;
+                saveSegConfig();
+                opShowStatus("配置更新成功", "success");
+                // 手动保存配置后退出操作面板；创建会话触发的内部保存仍留在当前页面。
+                if (!isAutoCall) {
+                    opClosePanel();
+                }
+                await fetchInitialMessages();
+            } else {
+                opShowStatus(data.error || "更新配置失败", "error");
+            }
+        } catch (err) {
+            console.log("更新配置失败：", err);
+            opShowStatus("更新配置失败：" + err.message, "error");
+        } finally {
+            opUpdateBtn.disabled = false;
+        }
+    }
+
+>>>>>>> 66fc74b (支持了文风选择，在无指定文风的情况下依然会启用默认文风)
     opCreateBtn.addEventListener("click", opDoCreate);
 
     async function startConnectedApp() {

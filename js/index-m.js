@@ -1572,6 +1572,9 @@ document.addEventListener("DOMContentLoaded", function (event) {
         { id: "light-thick-paint", name: "轻厚涂二次元", thumbnailUrl: null },
         { id: "line-manga", name: "日系线稿漫画", thumbnailUrl: null }
     ];
+    var opStyles = [];
+    var opCurrentStyleId = "";
+    var opStyleLoaded = false;
 
     function opShowStatus(msg, type) {
         opStatus.textContent = msg;
@@ -1593,6 +1596,7 @@ document.addEventListener("DOMContentLoaded", function (event) {
             });
         }
         if (opCurrentPage === "memory") opSyncMemorySettingsLink();
+        if (opCurrentPage === "style" && !opStyleLoaded) opLoadStyleOptions();
     }
 
     function opSyncMemorySettingsLink() {
@@ -1977,6 +1981,65 @@ document.addEventListener("DOMContentLoaded", function (event) {
         }
     }
 
+    async function opLoadStyleOptions() {
+        var group = document.getElementById("cfgStyle");
+        if (group) group.innerHTML = '<div class="op-image-loading"><span class="op-loading-spinner"></span><span>正在加载文风...</span></div>';
+        try {
+            var data = await opFetchConversationAction("public_list");
+            if (data && !data.error && Array.isArray(data)) {
+                opStyles = data;
+            } else {
+                opStyles = [];
+            }
+        } catch (err) {
+            console.log("加载文风列表失败：", err);
+            opStyles = [];
+        }
+        opStyleLoaded = true;
+        opRenderStyles(opCurrentStyleId);
+    }
+
+    function opRenderStyles(selectedId) {
+        var group = document.getElementById("cfgStyle");
+        if (!group) return;
+        group.innerHTML = "";
+        if (opStyles.length === 0) {
+            group.innerHTML = '<div class="op-image-loading"><span>暂无可选文风</span></div>';
+            return;
+        }
+        opStyles.forEach(function(style) {
+            var value = style.id || "";
+            var card = document.createElement("button");
+            card.type = "button";
+            card.className = "op-choice-card op-style-card";
+            card.setAttribute("data-value", value);
+
+            var head = document.createElement("div");
+            head.className = "op-model-card-head";
+
+            var title = document.createElement("span");
+            title.className = "op-choice-title op-model-title";
+            title.textContent = style.name || style.id || "未命名文风";
+
+            var action = document.createElement("span");
+            action.className = "op-choice-action";
+            action.textContent = value === selectedId ? "已启用" : "选择";
+
+            head.appendChild(title);
+            head.appendChild(action);
+            card.appendChild(head);
+
+            if (style.summary) {
+                var summary = document.createElement("div");
+                summary.className = "op-style-summary";
+                summary.textContent = style.summary;
+                card.appendChild(summary);
+            }
+            group.appendChild(card);
+        });
+        if (selectedId) opSetChoiceValue("cfgStyle", selectedId);
+    }
+
     function opGetChoiceValue(groupId, fallbackValue) {
         var group = document.getElementById(groupId);
         if (!group) return fallbackValue || "";
@@ -2030,6 +2093,7 @@ document.addEventListener("DOMContentLoaded", function (event) {
     opBindChoiceGroup("cfgAgentImageModel");
     opBindChoiceGroup("cfgImgSize");
     opBindChoiceGroup("cfgImgArtistPresetId");
+    opBindChoiceGroup("cfgStyle");
 
     function opCollectConfig() {
         var config = {
@@ -2037,7 +2101,11 @@ document.addEventListener("DOMContentLoaded", function (event) {
             img_size: opGetChoiceValue("cfgImgSize", "landscape"),
             img_artist_preset_id: opGetChoiceValue("cfgImgArtistPresetId", "default-anime"),
             agent_image_model_id: opGetChoiceValue("cfgAgentImageModel", "aob0wkxmi3"),
-            segmented_output_enabled: segConfig.enabled === true
+            segmented_output_enabled: segConfig.enabled === true,
+            dialogueStyleId: (function() {
+                var active = document.querySelector("#cfgStyle .active[data-value]");
+                return active ? active.getAttribute("data-value") : "";
+            })()
         };
         if (opAgentModels.length > 0) {
             var defaultAgentModelId = opResolvedAgentDefaultModelId();
@@ -2178,6 +2246,10 @@ document.addEventListener("DOMContentLoaded", function (event) {
             opSetChoiceValue("cfgImgSize", imgSettings.size || "landscape", "landscape");
             opSetChoiceValue("cfgImgArtistPresetId", imgSettings.artistPresetId || "default-anime", "default-anime");
             opSetChoiceValue("cfgAgentImageModel", data.agentImageModelId || "", "");
+
+            // 文风
+            opCurrentStyleId = data.dialogueStyleId || "";
+            if (opStyleLoaded && opCurrentStyleId) opSetChoiceValue("cfgStyle", opCurrentStyleId);
 
             opSyncMemorySettingsLink();
 
@@ -2342,6 +2414,8 @@ document.addEventListener("DOMContentLoaded", function (event) {
         opShowStatus(isAutoCall ? "正在更新配置..." : "正在更新配置...");
         try {
             var config = opCollectConfig();
+            // 创建新会话的自动更新不传入文风，文风配置只对单会话生效
+            if (isAutoCall) delete config.dialogueStyleId;
             var res = await fetch(API_BASE + "/api/conversation", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },

@@ -1316,7 +1316,7 @@ body {
 
 .op-subnav {
     display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
+    grid-template-columns: repeat(5, minmax(0, 1fr));
     gap: 1.4rem;
     margin-bottom: 4rem;
 }
@@ -1683,6 +1683,14 @@ body {
 }
 
 .op-artist-name {
+    overflow-wrap: anywhere;
+}
+
+.op-style-summary {
+    color: #999;
+    font-size: 1.2rem;
+    line-height: 1.4;
+    margin-top: 0.3rem;
     overflow-wrap: anywhere;
 }
 

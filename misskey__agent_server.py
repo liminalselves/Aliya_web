@@ -238,7 +238,7 @@ def _clear_cached_session_id(token, session_id=None):
 
 
 def _create_session_data(token):
-    _ensure_required_style_subscription(token)
+    _ensure_required_style_subscription({"styleId": DIALOGUE_STYLE_ID}, token)
     url = f"https://{MSK_HOST}/api/agents/sessions/create"
     payload = {
         "characterId": CHARACTER_ID,
@@ -284,61 +284,6 @@ def _show_session_data(token, session_id):
     resp = _http_post(url, json=payload, headers=_misskey_headers(), timeout=30)
     resp.raise_for_status()
     return resp.json()
-
-
-def _ensure_required_style_subscription(token):
-    usable_ids = _usable_style_ids(token)
-    if DIALOGUE_STYLE_ID in usable_ids:
-        logging.info(f">>> 标准文风特殊版已在可用文风列表中: {DIALOGUE_STYLE_ID}")
-        return {"success": True, "alreadyUsable": True}
-
-    url = f"https://{MSK_HOST}/api/agents/styles/subscribe"
-    payload = {"i": token, "styleId": DIALOGUE_STYLE_ID}
-    resp = _http_post(url, json=payload, headers=_misskey_headers(), timeout=30)
-    resp.raise_for_status()
-    result = resp.json()
-
-    usable_ids_after = _usable_style_ids(token)
-    if DIALOGUE_STYLE_ID not in usable_ids_after:
-        raise StyleEnforcementError(
-            "标准文风特殊版不在可用文风列表中，且自动添加后仍不可用："
-            f"styleId={DIALOGUE_STYLE_ID}"
-        )
-
-    logging.info(f">>> 已将标准文风特殊版加入可用文风列表: {DIALOGUE_STYLE_ID}")
-    return result
-
-
-def _ensure_required_session_style(token, session_id, session_data=None):
-    if session_data is None:
-        session_data = _show_session_data(token, session_id)
-
-    current_style_id = session_data.get("dialogueStyleId")
-    if current_style_id == DIALOGUE_STYLE_ID:
-        logging.info(f">>> 当前会话已使用标准文风特殊版: {session_id} dialogueStyleId={DIALOGUE_STYLE_ID}")
-        return
-
-    logging.info(
-        f">>> 当前会话不是标准文风特殊版，准备切换: "
-        f"{session_id} current={current_style_id} target={DIALOGUE_STYLE_ID}"
-    )
-    _ensure_required_style_subscription(token)
-
-    url = f"https://{MSK_HOST}/api/agents/sessions/update"
-    payload = {"i": token, "sessionId": session_id, "dialogueStyleId": DIALOGUE_STYLE_ID}
-    resp = _http_post(url, json=payload, headers=_misskey_headers(), timeout=30)
-    resp.raise_for_status()
-
-    verified = _show_session_data(token, session_id)
-    actual_style_id = verified.get("dialogueStyleId")
-    if actual_style_id != DIALOGUE_STYLE_ID:
-        raise StyleEnforcementError(
-            "强制标准文风特殊版失败："
-            f"目标 dialogueStyleId={DIALOGUE_STYLE_ID}，实际 dialogueStyleId={actual_style_id}"
-        )
-
-    logging.info(f">>> 已强制会话使用标准文风特殊版: {session_id} dialogueStyleId={DIALOGUE_STYLE_ID}")
-
 
 def _session_character_id(session):
     if not isinstance(session, dict):
@@ -653,6 +598,10 @@ def conversation():
         return rename_session(data, token)
     elif action == "delete_session":
         return delete_session(data, token)
+    elif action == "public_list":
+        return public_list(token)
+    elif action == "subscribe_style":
+        return subscribe_style(data, token)
     else:
         return jsonify({"error": "不支持的操作，请使用 create 或 update"}), 400
 
@@ -674,7 +623,7 @@ def _build_image_settings(data):
         "cfgRescale": data.get("img_cfg_rescale", IMG_CFG_RESCALE),
         "sampler": data.get("img_sampler", IMG_SAMPLER),
         "noiseSchedule": data.get("img_noise_schedule", IMG_NOISE_SCHEDULE),
-        "dialogueStyleId": DIALOGUE_STYLE_ID,
+        "dialogueStyleId": data.get("dialogue_style_id", DIALOGUE_STYLE_ID),
     }
 
 def _image_model_id_from_data(data):
@@ -749,7 +698,7 @@ def _update_session(data, token):
     payload = {
         "i": token,
         "sessionId": session_id,
-        "dialogueStyleId": DIALOGUE_STYLE_ID,
+        "dialogueStyleId": data.get("dialogueStyleId", DIALOGUE_STYLE_ID),
     }
     if "agent_image_model_id" in data:
         payload["agentImageModelId"] = _image_model_id_from_data(data)
@@ -999,7 +948,7 @@ def delete_session(data, token):
         return jsonify({"error": str(e)}), 500
 
 def list_usable(token):
-    """获取文风"""
+    """获取可用文风列表"""
     url = "https://misskey.liminalselves.top/api/agents/styles/list-usable"
     payload = {"i": token}
     headers = {
@@ -1026,7 +975,92 @@ def list_usable(token):
     except (KeyError, ValueError) as e:
         logging.error(f"解析文风数据异常: {e}")
         return jsonify({"error": f"数据解析失败: {str(e)}"}), 500
+    
+def _ensure_required_style_subscription(data, token):
+    style_id = data.get("dialogueStyleId") or DIALOGUE_STYLE_ID
+    
+    usable_ids = _usable_style_ids(token)
+    if style_id in usable_ids:
+        logging.info(f">>> 选择的文风已在可用文风列表中: {style_id}")
+        return {"success": True, "alreadyUsable": True}
 
+    url = f"https://{MSK_HOST}/api/agents/styles/subscribe"
+    payload = {"i": token, "styleId": style_id}
+    resp = _http_post(url, json=payload, headers=_misskey_headers(), timeout=30)
+    resp.raise_for_status()
+    result = resp.json()
+
+    usable_ids_after = _usable_style_ids(token)
+    if style_id not in usable_ids_after:
+        raise StyleEnforcementError(
+            "选择的文风不在可用文风列表中，且自动添加后仍不可用："
+            f"styleId={style_id}"
+        )
+
+    logging.info(f">>> 已将选择的文风加入可用文风列表: {style_id}")
+    return result
+
+def subscribe_style(data, token):
+    """添加文风到可用列表中"""
+    style_id = data.get("dialogueStyleId") or data.get("styleId") or DIALOGUE_STYLE_ID
+    url=f"https://{MSK_HOST}/api/agents/styles/subscribe"
+    payload = {"i": token, "styleId": style_id}
+    resp = _http_post(url, json=payload, headers=_misskey_headers(), timeout=30)
+    resp.raise_for_status()
+    return jsonify(resp.json()), 200
+
+
+def _ensure_required_session_style(token, session_id, session_data=None):
+    if session_data is None:
+        session_data = _show_session_data(token, session_id)
+
+    current_style_id = session_data.get("dialogueStyleId")
+    
+    #改了一下判断逻辑，现在只有空值才会切换
+    if current_style_id:
+        logging.info(f">>> 文风已经选择，过过过: {session_id} dialogueStyleId={current_style_id}")
+        return
+
+    logging.info(
+        f">>> 当前会话文风为空，准备设置为标准文风特殊版: "
+        f"{session_id} target={DIALOGUE_STYLE_ID}"
+    )
+    
+    _ensure_required_style_subscription({"dialogueStyleId": DIALOGUE_STYLE_ID}, token)
+    url = f"https://{MSK_HOST}/api/agents/sessions/update"
+    payload = {"i": token, "sessionId": session_id, "dialogueStyleId": DIALOGUE_STYLE_ID}
+    resp = _http_post(url, json=payload, headers=_misskey_headers(), timeout=30)
+    resp.raise_for_status()
+    
+    verified = _show_session_data(token, session_id)
+    actual_style_id = verified.get("dialogueStyleId")
+    if actual_style_id != DIALOGUE_STYLE_ID:
+        raise StyleEnforcementError(
+            "强制标准文风特殊版失败："
+            f"目标 dialogueStyleId={DIALOGUE_STYLE_ID}，实际 dialogueStyleId={actual_style_id}"
+        )
+    logging.info(f">>> 已强制会话使用标准文风特殊版: {session_id} dialogueStyleId={DIALOGUE_STYLE_ID}")
+
+def public_list(token):
+    """获取广场文风列表"""
+    url="https://misskey.liminalselves.top/api/agents/styles/public-list"
+    payload = {"i": token}
+    try:
+        resp = _http_post(url, json=payload, headers=_misskey_headers(), timeout=30)
+        resp.raise_for_status()
+        data = resp.json()
+        
+        styles_list = []
+        for item in data:
+            styles_list.append({
+                "id": item.get("id"),
+                "name": item.get("name"),
+                "summary": item.get("summary")
+            })
+        return jsonify(styles_list), 200
+    except requests.exceptions.RequestException as e:
+        logging.error(f"获取广场文风列表请求异常: {e}")
+        return jsonify({"error": str(e)}), 500
 def list_mine(token):
     """获取 Aliya 角色的会话列表"""
     try:
@@ -1255,7 +1289,6 @@ _ws_state_lock = threading.Lock()
 def _current_ws_token():
     with _ws_state_lock:
         return msk_token
-
 
 async def _listen_misskey():
     """在单一事件循环中监听当前 token，并在 token 变化时重连。"""
