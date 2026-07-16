@@ -698,7 +698,7 @@ def _update_session(data, token):
     payload = {
         "i": token,
         "sessionId": session_id,
-        "dialogueStyleId": data.get("dialogueStyleId", DIALOGUE_STYLE_ID),
+        "dialogueStyleId": data.get("dialogueStyleId") or DIALOGUE_STYLE_ID,
     }
     if "agent_image_model_id" in data:
         payload["agentImageModelId"] = _image_model_id_from_data(data)
