@@ -1496,6 +1496,7 @@ document.addEventListener("DOMContentLoaded", function (event) {
                     failed = true;
                     throw new Error(data.error);
                 }
+                }
             } catch (err) {
                 failed = true;
                 console.log("获取时间线失败：", err);
@@ -3303,43 +3304,6 @@ document.addEventListener("DOMContentLoaded", function (event) {
         }
     }
 
-<<<<<<< HEAD
-=======
-    async function opDoUpdate(isAutoCall) {
-        opUpdateBtn.disabled = true;
-        opShowStatus(isAutoCall ? "正在更新配置..." : "正在更新配置...");
-        try {
-            var config = opCollectConfig();
-            // 创建新会话的自动更新不传入文风，文风配置只对单会话生效
-            if (isAutoCall) delete config.dialogueStyleId;
-            var res = await fetch(API_BASE + "/api/conversation", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: makeBody(config)
-            });
-            var data = await res.json();
-            if (await guardAuthResponse(res, data)) return;
-            if (data.status === "success") {
-                segConfig.enabled = config.segmented_output_enabled === true;
-                saveSegConfig();
-                opShowStatus("配置更新成功", "success");
-                // 手动保存配置后退出操作面板；创建会话触发的内部保存仍留在当前页面。
-                if (!isAutoCall) {
-                    opClosePanel();
-                }
-                await fetchInitialMessages();
-            } else {
-                opShowStatus(data.error || "更新配置失败", "error");
-            }
-        } catch (err) {
-            console.log("更新配置失败：", err);
-            opShowStatus("更新配置失败：" + err.message, "error");
-        } finally {
-            opUpdateBtn.disabled = false;
-        }
-    }
-
->>>>>>> 66fc74b (支持了文风选择，在无指定文风的情况下依然会启用默认文风)
     opCreateBtn.addEventListener("click", opDoCreate);
 
     async function startConnectedApp() {

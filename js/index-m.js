@@ -1202,6 +1202,10 @@ document.addEventListener("DOMContentLoaded", function (event) {
     // 初始化拉取消息（通过 timeline 端点，type=new）
     async function fetchInitialMessages() {
         aliyaText.innerHTML = "";
+        noMoreHistory = false;
+        earliestMsgId = null;
+        recentlySentSet = {};
+        recentlyReceivedSet = {};
         try {
             var res = await fetch(API_BASE + "/api/conversation", {
                 method: "POST",

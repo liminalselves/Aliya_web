@@ -438,6 +438,7 @@ def _add_message(role, content, msk_msg_id=None, token=None, metadata=None):
             "msk_msg_id": msk_msg_id, # 存储Misskey的消息ID供前端调图使用
             "timestamp": time.time(),
             "owner": owner,
+            "session_id": session_id,
         }
         if isinstance(metadata, dict):
             msg.update(metadata)
@@ -1340,7 +1341,8 @@ async def _listen_misskey():
 
                         if not is_dup:
                             logging.info("<<< 已收到 Misskey WebSocket 回复")
-                            _add_message("aliya", text, token=token)
+                            ws_session_id = _ensure_session_id(token)
+                            _add_message("aliya", text, token=token, session_id=ws_session_id)
         except asyncio.CancelledError:
             raise
         except Exception as e:
