@@ -1445,8 +1445,8 @@ document.addEventListener("DOMContentLoaded", function (event) {
                 }
                 renderAliyaMessage(hrResult.text, processed.images);
                 setWaiting(false);
-                recentlyReceivedSet[processed.text] = true;
-                setTimeout(function () { delete recentlyReceivedSet[processed.text]; }, 10000);
+                recentlyReceivedSet[rawText] = true;
+                setTimeout(function () { delete recentlyReceivedSet[rawText]; }, 10000);
             } else if (data.status === "error") {
                 appendMessage("aliya", data.reply || data.error || "通信故障，请稍后再试");
                 setWaiting(false);
