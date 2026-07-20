@@ -1496,6 +1496,11 @@ document.addEventListener("DOMContentLoaded", function (event) {
                     failed = true;
                     throw new Error(data.error);
                 }
+                // 同步 lastMsgId，避免首次轮询重复获取已渲染的消息
+                if (data.length > 0) {
+                    lastMsgId = data[0].id;
+                } else {
+                    lastMsgId = 0;
                 }
             } catch (err) {
                 failed = true;

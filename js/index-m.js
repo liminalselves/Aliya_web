@@ -1247,8 +1247,14 @@ document.addEventListener("DOMContentLoaded", function (event) {
                 if (data.length > 0) {
                     // data[0] 是最新，data[length-1] 是最旧
                     earliestMsgId = data[data.length - 1].id;
+                    // 同步更新 lastMsgId，避免后续 pollMessages(since=lastMsgId)
+                    // 把已渲染的历史消息再次当成新消息重新发送一遍
+                    lastMsgId = data[0].id;
                     // 如果首次拉取不足一页，说明没有更多历史了
                     if (data.length < 30) { noMoreHistory = true; }
+                } else {
+                    // 空会话：重置轮询游标，避免沿用上一个会话的旧 lastMsgId
+                    lastMsgId = 0;
                 }
                 requestAnimationFrame(() => { aliyaText.scrollTop = aliyaText.scrollHeight; });
             }
