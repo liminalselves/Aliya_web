@@ -1130,49 +1130,83 @@ body {
     font-size: 15rem;
 }
 
-/* 等待动画 */
+/* 局部加载状态：保留聊天区，不再用巨大的空心圆替换输入框。 */
 .loader {
-    display: none;
-    position: relative;
-    width: 20rem;
-    height: 20rem;
-    margin: 14rem auto;
-    border: 0.1rem solid #b2b0b2;
-    border-radius: 50%;
-    touch-action: manipulation; /* 禁用双击缩放 */
-}
-
-.rotator {
     width: 100%;
-    height: 100%;
-    animation: rotate 2s linear infinite;
+    min-height: 42px;
+    margin: 0;
+    padding: 0 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    box-sizing: border-box;
+    border: 1px solid var(--mobile-border);
+    border-radius: 10px;
+    background: #303030;
+    color: #c4c4c4;
+    font-size: 13px;
 }
 
-.ball {
-    position: absolute;
-    top: -0.7rem; /* 调整小球到边框外侧 */
-    left: 50%;
-    width: 1.2rem;
-    height: 1.2rem;
-    background: #b2b0b2;
-    border-radius: 50%;
-    transform: translateX(-50%);
+.loader[hidden],
+.chat-loading-state[hidden] {
+    display: none;
 }
 
-@keyframes rotate {
-    0% { transform: rotate(0deg); }
-    50% { transform: rotate(180deg); } 
-    80% { transform: rotate(360deg); } 
-    100% { transform: rotate(360deg); } 
-}
-.loader-img{
-    position: absolute;
-    top: 3.3rem;
-    left: 3.6rem;
-    width: 13.5rem;
-    height: 13.5rem;
+.loader-spinner,
+.chat-loading-spinner,
+.op-btn-spinner {
+    flex: 0 0 auto;
+    width: 16px;
+    height: 16px;
+    border: 2px solid rgba(255, 255, 255, 0.16);
+    border-top-color: #a7c6a0;
     border-radius: 50%;
-    overflow: hidden;
+    animation: ui-spin 0.8s linear infinite;
+}
+
+.chat-loading-state {
+    position: absolute;
+    z-index: 5;
+    top: 26%;
+    left: 8px;
+    right: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    min-height: 42px;
+    padding: 0 12px;
+    box-sizing: border-box;
+    border: 1px solid rgba(167, 198, 160, 0.3);
+    border-radius: 10px;
+    background: rgba(35, 35, 35, 0.92);
+    color: #c4c4c4;
+    font-size: 13px;
+    pointer-events: none;
+}
+
+.chat-loading-state[data-placement="top"] {
+    top: 8px;
+}
+
+.chat-loading-state[data-state="error"] {
+    border-color: rgba(198, 105, 8, 0.55);
+    color: #e0a06a;
+}
+
+.content .left.is-refreshing {
+    opacity: 0.68;
+    transition: opacity 0.2s ease;
+}
+
+.player-input-area.is-waiting .image-upload-btn {
+    opacity: 0.5;
+    pointer-events: none;
+}
+
+@keyframes ui-spin {
+    to { transform: rotate(360deg); }
 }
 
 #aliyaText img {
@@ -1230,16 +1264,33 @@ body {
     box-sizing: border-box;
 }
 
-.player-input-area textarea {
+.player-compose-row {
+    position: relative;
     width: 100%;
     height: 18rem;
-    background-color: #2d2d2d;
+    overflow: hidden;
+    background: #2d2d2d;
     border: 0.2rem solid #555;
     border-radius: 1.5rem;
+    transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.player-compose-row:focus-within {
+    border-color: #7f9d79;
+    box-shadow: 0 0 0 0.3rem rgba(127, 157, 121, 0.14);
+}
+
+.player-input-area textarea {
+    display: block;
+    width: 100%;
+    height: 100%;
+    background: transparent;
+    border: 0;
+    border-radius: 0;
     color: #efefef;
     font-size: 4rem;
     line-height: 1.45;
-    padding: 2rem;
+    padding: 2rem 7rem 2rem 2rem;
     resize: none;
     outline: none;
     font-family: inherit;
@@ -1248,6 +1299,53 @@ body {
 
 .player-input-area textarea::placeholder {
     color: #777;
+}
+
+.image-upload-btn {
+    position: absolute;
+    z-index: 2;
+    top: 0;
+    right: 0;
+    width: 5.8rem;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #efefef;
+    background: #303030;
+    border: 0;
+    border-left: 0.2rem solid #555;
+    border-radius: 0;
+    cursor: pointer;
+    font-size: 3rem;
+    transition: background-color 0.2s;
+}
+
+.image-upload-btn::before {
+    content: "+";
+    width: 4.6rem;
+    height: 4.6rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    line-height: 1;
+    font-weight: 300;
+    background: #454545;
+    border: 0.2rem solid #686868;
+    border-radius: 50%;
+    transition: background-color 0.2s, border-color 0.2s, transform 0.2s;
+}
+
+.image-upload-btn:hover,
+.image-upload-btn:focus-within {
+    background: #3b3b3b;
+}
+
+.image-upload-btn:hover::before,
+.image-upload-btn:focus-within::before {
+    background: #5a5a5a;
+    border-color: #a7c6a0;
+    transform: translateY(-1px);
 }
 
 .player-input-area button {
@@ -1316,7 +1414,7 @@ body {
 
 .op-subnav {
     display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
+    grid-template-columns: repeat(5, minmax(0, 1fr));
     gap: 1.4rem;
     margin-bottom: 4rem;
 }
@@ -1404,12 +1502,34 @@ body {
 }
 
 .op-session-list {
+    position: relative;
     max-height: 34rem;
     min-height: 10rem;
     overflow-y: auto;
     background: #202020;
     border-radius: 1.5rem;
     padding: 1rem;
+}
+.op-session-list.is-loading,
+.op-choice-list.is-loading,
+.op-artist-grid.is-loading {
+    position: relative;
+    opacity: 0.62;
+    pointer-events: none;
+}
+.op-session-list.is-loading::after,
+.op-choice-list.is-loading::after,
+.op-artist-grid.is-loading::after {
+    content: "正在刷新...";
+    position: absolute;
+    inset: 0;
+    z-index: 3;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #c4c4c4;
+    background: rgba(32, 32, 32, 0.48);
+    font-size: 12px;
 }
 
 .op-session-loading,
@@ -2181,14 +2301,33 @@ body > .content,
     padding: 8px;
 }
 
-.player-input-area textarea {
+.player-compose-row {
     height: 72px;
-    padding: 10px 12px;
     border: 1px solid var(--mobile-border);
     border-radius: 10px;
+}
+
+.player-input-area textarea {
+    height: 72px;
+    padding: 10px 54px 10px 12px;
+    border: 0;
+    border-radius: 0;
     font-size: 16px;
     line-height: 1.45;
     background: #252525;
+}
+
+.image-upload-btn {
+    width: 46px;
+    background: #303030;
+    border-left: 1px solid var(--mobile-border);
+    font-size: 18px;
+}
+
+.image-upload-btn::before {
+    width: 30px;
+    height: 30px;
+    border-width: 1px;
 }
 
 .player-input-area button {
@@ -2364,6 +2503,90 @@ body > .content,
     padding: 10px;
 }
 
+.op-proactive-hero {
+    gap: 12px;
+    padding: 14px;
+    border-radius: 10px;
+}
+
+.op-proactive-hero-icon {
+    width: 38px;
+    height: 38px;
+    font-size: 24px;
+}
+
+.op-proactive-title {
+    font-size: 18px;
+}
+
+.op-proactive-caption,
+.op-proactive-notice,
+.op-proactive-switch-caption,
+.op-proactive-card-meta,
+.op-proactive-empty {
+    font-size: 12px;
+}
+
+.op-proactive-settings {
+    gap: 8px;
+}
+
+.op-proactive-switch-card {
+    gap: 10px;
+    padding: 12px;
+    border-radius: 10px;
+}
+
+.op-proactive-switch-card input {
+    width: 18px;
+    height: 18px;
+}
+
+.op-proactive-switch-title,
+.op-proactive-card-description {
+    font-size: 14px;
+}
+
+.op-proactive-list-head {
+    gap: 8px;
+}
+
+.op-icon-btn {
+    width: 34px;
+    height: 34px;
+    font-size: 18px;
+}
+
+.op-proactive-list {
+    gap: 8px;
+    margin-top: 10px;
+}
+
+.op-proactive-card {
+    padding: 12px;
+    border-radius: 10px;
+}
+
+.op-proactive-status,
+.op-proactive-action-btn {
+    font-size: 12px;
+}
+
+.op-proactive-card-actions {
+    gap: 6px;
+    margin-top: 10px;
+}
+
+.op-proactive-action-btn {
+    padding: 6px 10px;
+    border-radius: 7px;
+}
+
+.op-proactive-empty {
+    min-height: 58px;
+    border-radius: 10px;
+}
+
 .op-config-grid {
     gap: 10px;
 }
@@ -2386,6 +2609,25 @@ body > .content,
     min-height: 40px;
     padding: 9px 14px;
     border-radius: 9px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 7px;
+}
+
+.op-btn.is-loading {
+    cursor: wait;
+}
+
+.op-btn-spinner {
+    display: none;
+}
+
+.op-btn.is-loading .op-btn-spinner {
+    display: inline-block;
+    width: 14px;
+    height: 14px;
+    border-width: 2px;
 }
 
 .auth-overlay .auth-title {

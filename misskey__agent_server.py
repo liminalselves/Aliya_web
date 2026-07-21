@@ -479,7 +479,7 @@ def _message_owner_key(token):
     return _token_fingerprint(token) if token else None
 
 
-def _add_message(role, content, msk_msg_id=None, token=None):
+def _add_message(role, content, msk_msg_id=None, token=None, metadata=None):
     """线程安全地添加消息到存储"""
     global _msg_id_counter
     owner = _message_owner_key(token)
@@ -493,6 +493,8 @@ def _add_message(role, content, msk_msg_id=None, token=None):
             "timestamp": time.time(),
             "owner": owner,
         }
+        if isinstance(metadata, dict):
+            msg.update(metadata)
         messages_store.append(msg)
         # 保留最近 200 条
         if len(messages_store) > 200:
@@ -548,14 +550,15 @@ def chat():
     raw_message = data.get("message") if isinstance(data, dict) else None
     if not isinstance(raw_message, str):
         return jsonify({"error": "消息必须是字符串"}), 400
-    player_msg = raw_message.strip()
-    if not player_msg:
+    player_msg = raw_message.strip() if isinstance(raw_message, str) else ""
+    file_id = _string_from_json(data, "file_id", 128)
+    if not player_msg and not file_id:
         return jsonify({"error": "消息不能为空"}), 400
     if len(player_msg) > MAX_MESSAGE_CHARS:
         return jsonify({"error": f"消息不能超过 {MAX_MESSAGE_CHARS} 字符"}), 400
 
-    _add_message("player", player_msg, token=token)
-    result = _send_to_misskey(player_msg, token)
+    _add_message("player", player_msg or "[图片消息]", token=token, metadata={"file_id": file_id} if file_id else None)
+    result = _send_to_misskey(player_msg, token, file_id=file_id)
     
     if isinstance(result, dict) and result.get("error"):
         return jsonify({
@@ -567,7 +570,11 @@ def chat():
             "status": "success",
             "reply": "消息已发送并收到回复",
             "assistant_message": result["text"],
-            "assistant_message_id": result.get("messageId")
+            "assistant_message_id": result.get("messageId"),
+            "image_recognition_status": result.get("imageRecognitionStatus"),
+            "image_recognition_description": result.get("imageRecognitionDescription"),
+            "proactive_schedule_action_types": result.get("proactiveScheduleActionTypes", []),
+            "proactive_schedule_control_failed": result.get("proactiveScheduleControlFailed", False),
         })
     elif result is True:
         return jsonify({
@@ -614,6 +621,14 @@ def conversation():
         return list_agent_models(token)
     elif action == "credit_balance":
         return credit_balance(token)
+    elif action == "vision_models":
+        return list_vision_models(token)
+    elif action == "proactive_schedules":
+        return list_proactive_schedules(data, token)
+    elif action == "set_proactive_status":
+        return set_proactive_schedule_status(data, token)
+    elif action == "delete_proactive_schedule":
+        return delete_proactive_schedule(data, token)
     elif action == "update_segmented":
         return update_segmented_output(data, token)
     elif action == "rename_session":
@@ -720,6 +735,15 @@ def _update_session(data, token):
         payload["agentModelId"] = _agent_model_id_from_data(data)
     if "segmented_output_enabled" in data:
         payload["segmentedOutputEnabled"] = _bool_from_data(data, "segmented_output_enabled")
+    if "agent_vision_model_id" in data:
+        payload["agentVisionModelId"] = _string_from_json(data, "agent_vision_model_id", 128) or None
+    for local_key, upstream_key in (
+        ("time_awareness_enabled", "timeAwarenessEnabled"),
+        ("random_proactive_enabled", "randomProactiveEnabled"),
+        ("scheduled_proactive_enabled", "scheduledProactiveEnabled"),
+    ):
+        if local_key in data:
+            payload[upstream_key] = _bool_from_data(data, local_key)
     headers = _misskey_headers()
     try:
         resp = _http_post(url, json=payload, headers=headers, timeout=30)
@@ -814,6 +838,60 @@ def list_agent_models(token):
         return jsonify({"error": f"获取对话模型失败: {status}", "detail": detail}), status
     except requests.exceptions.RequestException as e:
         logging.error(f"获取对话模型请求异常: {e}")
+        return jsonify({"error": str(e)}), 500
+
+def list_vision_models(token):
+    try:
+        data = _cached_metadata(
+            "vision_models",
+            token,
+            300,
+            lambda: _misskey_api_post(token, "agents/vision-models/list"),
+        )
+        return jsonify(data if isinstance(data, dict) else {"models": [], "defaultModelId": None}), 200
+    except requests.exceptions.RequestException as e:
+        logging.error(f"获取图片识别模型失败: {e}")
+        return jsonify({"error": str(e)}), 500
+
+def _proactive_schedule_api(token, action, payload=None):
+    return _misskey_api_post(token, f"agents/proactive-schedules/{action}", payload or {})
+
+def _proactive_session_id(data, token):
+    session_id = _string_from_json(data, "session_id", 128)
+    return session_id or _ensure_session_id(token)
+
+def list_proactive_schedules(data, token):
+    try:
+        session_id = _proactive_session_id(data, token)
+        return jsonify(_proactive_schedule_api(token, "list", {"sessionId": session_id})), 200
+    except requests.exceptions.RequestException as e:
+        return jsonify({"error": str(e)}), 500
+
+def set_proactive_schedule_status(data, token):
+    session_id = _proactive_session_id(data, token)
+    schedule_id = _string_from_json(data, "schedule_id", 128)
+    status = _string_from_json(data, "status", 16)
+    if not schedule_id or status not in {"active", "paused"}:
+        return jsonify({"error": "需要 schedule_id 和 status(active/paused) 参数"}), 400
+    try:
+        result = _proactive_schedule_api(token, "set-status", {
+            "sessionId": session_id,
+            "scheduleId": schedule_id,
+            "status": status,
+        })
+        return jsonify(result), 200
+    except requests.exceptions.RequestException as e:
+        return jsonify({"error": str(e)}), 500
+
+def delete_proactive_schedule(data, token):
+    session_id = _proactive_session_id(data, token)
+    schedule_id = _string_from_json(data, "schedule_id", 128)
+    if not schedule_id:
+        return jsonify({"error": "缺少 schedule_id 参数"}), 400
+    try:
+        result = _proactive_schedule_api(token, "delete", {"sessionId": session_id, "scheduleId": schedule_id})
+        return jsonify(result), 200
+    except requests.exceptions.RequestException as e:
         return jsonify({"error": str(e)}), 500
 
 def credit_balance(token):
@@ -984,10 +1062,17 @@ def timeline(_type, last_id, token):
         
         messages_list = []
         for item in data:
+            if item.get("isInternal") is True:
+                continue
             messages_list.append({
                 "id": item.get("id"),
                 "role": item.get("role"),
-                "content": item.get("content")
+                "content": item.get("content"),
+                "file": item.get("file"),
+                "imageRecognitionStatus": item.get("imageRecognitionStatus"),
+                "imageRecognitionDescription": item.get("imageRecognitionDescription"),
+                "proactiveScheduleActionTypes": item.get("proactiveScheduleActionTypes", []),
+                "proactiveScheduleControlFailed": item.get("proactiveScheduleControlFailed", False),
             })
         return jsonify(messages_list), 200
     except requests.exceptions.RequestException as e:
@@ -1056,7 +1141,7 @@ def get_config(token):
         return jsonify({"error": str(e)}), 500
 
 #Misskey通信
-def _send_to_misskey(text, token):
+def _send_to_misskey(text, token, file_id=None):
     """通过 Misskey HTTP API 发送消息，并直接解析同步返回的response"""
     try:
         session_id = _ensure_session_id(token)
@@ -1070,9 +1155,11 @@ def _send_to_misskey(text, token):
     payload = {
         "i": token,
         "sessionId": session_id,
-        "text": text,
+        "text": text or "",
         "clientRequestId": str(uuid.uuid4())
     }
+    if file_id:
+        payload["fileId"] = file_id
     headers = {
         "Content-Type": "application/json",
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36",
@@ -1089,13 +1176,19 @@ def _send_to_misskey(text, token):
                 data = resp.json()
                 assistant_text = data.get("assistantText")
                 assistant_msg_id = data.get("assistantMessageId") # 提取消息 ID
+                metadata = {
+                    "image_recognition_status": data.get("userImageRecognitionStatus"),
+                    "image_recognition_description": data.get("userImageRecognitionDescription"),
+                    "proactive_schedule_action_types": data.get("proactiveScheduleActionTypes", []),
+                    "proactive_schedule_control_failed": data.get("proactiveScheduleControlFailed", False),
+                }
                 if assistant_text:
                     logging.info("<<< 已收到 Misskey 同步回复")
-                    _add_message("aliya", assistant_text, msk_msg_id=assistant_msg_id, token=token)
-                    return {"text": assistant_text, "messageId": assistant_msg_id}
+                    _add_message("aliya", assistant_text, msk_msg_id=assistant_msg_id, token=token, metadata=metadata)
+                    return {"text": assistant_text, "messageId": assistant_msg_id, **metadata}
                 else:
                     logging.warning("API 返回成功，但未找到 assistantText 字段")
-                    return True
+                    return {"text": "", "messageId": assistant_msg_id, **metadata}
             except ValueError:
                 logging.error("API 返回的不是有效的 JSON 格式")
                 return True
@@ -1242,6 +1335,42 @@ def _validate_misskey_token(token):
         return None
     body = resp.json()
     return body if isinstance(body, dict) else None
+
+@app.route("/api/upload_image", methods=["POST"])
+def upload_image():
+    """把浏览器图片上传到 Misskey Drive，返回可用于 agents/messages/send 的 fileId。"""
+    token = _token_from_request()
+    if not token:
+        return jsonify({"error": "缺少鉴权 token"}), 401
+    uploaded = request.files.get("file")
+    if uploaded is None or not uploaded.filename:
+        return jsonify({"error": "请选择图片文件"}), 400
+    if not (uploaded.mimetype or "").lower().startswith("image/"):
+        return jsonify({"error": "只支持图片文件"}), 400
+    try:
+        resp = _http_post(
+            f"https://{MSK_HOST}/api/drive/files/create",
+            data={"i": token},
+            files={"file": (uploaded.filename, uploaded.stream, uploaded.mimetype)},
+            headers={
+                "User-Agent": "Aliya Web/1.0",
+                "Accept": "application/json, text/plain, */*",
+                "Origin": f"https://{MSK_HOST}",
+            },
+            timeout=60,
+        )
+        resp.raise_for_status()
+        body = resp.json()
+        file_id = body.get("id") if isinstance(body, dict) else None
+        if not file_id:
+            return jsonify({"error": "Misskey 上传响应缺少文件 ID"}), 502
+        return jsonify({"id": file_id, "file": body}), 200
+    except requests.exceptions.RequestException as e:
+        detail = e.response.text if e.response is not None else str(e)
+        logging.error(f"上传图片到 Misskey 失败: {detail}")
+        return jsonify({"error": "上传图片失败", "detail": detail}), 502
+    except (TypeError, ValueError) as e:
+        return jsonify({"error": f"解析图片上传响应失败: {e}"}), 502
 
 @app.route("/api/set_token", methods=["POST"])
 def set_token():

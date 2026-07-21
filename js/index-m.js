@@ -562,10 +562,9 @@ document.addEventListener("DOMContentLoaded", function (event) {
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify(payload)
             });
-            if (res.ok) {
-                var data = await res.json();
-                return data.url || data.thumbnailUrl;
-            }
+            var data = await res.json();
+            if (res.ok) return data.url || data.thumbnailUrl;
+            console.warn("占位图生成失败：", data.errorMessage || data.errorCode || "未知错误");
         } catch (e) {
             console.error("获取占位图失败", e);
         }
@@ -827,9 +826,13 @@ document.addEventListener("DOMContentLoaded", function (event) {
     }
 
     var playerInput = document.getElementById("playerInput");
+    var imageInput = document.getElementById("imageInput");
     var sendBtn = document.getElementById("sendBtn");
     var playerInputArea = document.getElementById("playerInputArea");
     var waitImg = document.getElementById("waitImg");
+    var waitText = document.getElementById("waitText");
+    var chatLoadingState = document.getElementById("chatLoadingState");
+    var chatLoadingText = document.getElementById("chatLoadingText");
     var lastMsgId = 0;
     var isWaitingReply = false;
     var pollTimer = null;
@@ -838,8 +841,11 @@ document.addEventListener("DOMContentLoaded", function (event) {
     var noMoreHistory = false;
     var earliestMsgId = null;
     var recentlySentSet = {}; 
-    var recentlyReceivedSet = {}; 
-    var isAtBottomFlag = true; 
+    var recentlyReceivedSet = {};
+    var isAtBottomFlag = true;
+    var isTimelineLoading = false;
+    var timelineLoadPromise = null;
+    var chatLoadingNoticeTimer = null;
 
     function stopPolling() {
         if (pollTimer) {
@@ -880,7 +886,7 @@ document.addEventListener("DOMContentLoaded", function (event) {
     });
     var scrollObserver = new MutationObserver(function () {
         // 加载历史消息期间跳过，避免与滚动位置补偿争抢
-        if (isLoadingMore) return;
+        if (isLoadingMore || isTimelineLoading) return;
         if (isAtBottomFlag) {
             requestAnimationFrame(() => { aliyaText.scrollTop = aliyaText.scrollHeight; });
         }
@@ -1157,68 +1163,123 @@ document.addEventListener("DOMContentLoaded", function (event) {
 
     // prependMessages 已移除，timeline 一次性返回全部消息
 
-    function setWaiting(isWaiting) {
+    function setWaiting(isWaiting, message) {
         isWaitingReply = isWaiting;
-        if (isWaiting) { playerInputArea.style.display = "none"; waitImg.style.display = "block"; } 
-        else { playerInputArea.style.display = "flex"; waitImg.style.display = "none"; }
+        if (waitText && message) waitText.textContent = message;
+        if (waitImg) waitImg.hidden = !isWaiting;
+        if (playerInputArea) playerInputArea.classList.toggle("is-waiting", isWaiting);
+        [playerInput, imageInput, sendBtn].forEach(function(element) {
+            if (element) element.disabled = isWaiting;
+        });
+        if (sendBtn) sendBtn.setAttribute("aria-busy", isWaiting ? "true" : "false");
+    }
+
+    function setChatLoading(isLoading, message, placement) {
+        if (chatLoadingNoticeTimer) {
+            clearTimeout(chatLoadingNoticeTimer);
+            chatLoadingNoticeTimer = null;
+        }
+        if (chatLoadingText && message) chatLoadingText.textContent = message;
+        if (aliyaText) aliyaText.classList.toggle("is-refreshing", isLoading);
+        if (!chatLoadingState) return;
+        chatLoadingState.hidden = !isLoading;
+        chatLoadingState.dataset.placement = placement || "center";
+        if (!isLoading) chatLoadingState.removeAttribute("data-state");
+    }
+
+    function showChatLoadingError(message) {
+        if (!chatLoadingState) return;
+        setChatLoading(true, message || "加载聊天记录失败", "center");
+        chatLoadingState.dataset.state = "error";
+        chatLoadingNoticeTimer = setTimeout(function() {
+            if (!isTimelineLoading) setChatLoading(false);
+        }, 3200);
     }
 
     // 初始化拉取消息（通过 timeline 端点，type=new）
     async function fetchInitialMessages() {
-        aliyaText.innerHTML = "";
-        try {
-            var res = await fetch(API_BASE + "/api/conversation", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: makeBody({ action: "timeline", type: "new" })
-            });
-            var data = await res.json();
-            if (await guardAuthResponse(res, data)) return;
-            if (Array.isArray(data)) {
-                var hrProcessed = false;
-                // 后端返回最新→最旧（Misskey timeline 默认降序），逆序渲染为正序
-                for (var i = data.length - 1; i >= 0; i--) {
-                    var msg = data[i];
-                    var role = msg.role === "user" ? "player" : "aliya";
-                    var cleanContent = msg.content;
-                    var images = [];
-                    if (role === "aliya") {
-                        var processed = await processDrawingInstruction(msg.content, msg.id);
-                        cleanContent = processed.text;
-                        images = processed.images;
-                        var hrResult = processHeartRateInstruction(cleanContent);
-                        cleanContent = hrResult.text;
-                        // 只在最新一条 aliya 消息时决定是否恢复默认心率
-                        if (!hrProcessed) {
-                            if (!hrResult.matched) {
-                                currentRange = ranges.medium;
-                                updateDisplay();
+        if (timelineLoadPromise) return timelineLoadPromise;
+        timelineLoadPromise = (async function() {
+            var failed = false;
+            isTimelineLoading = true;
+            setChatLoading(true, "正在加载聊天记录...", "center");
+            try {
+                var res = await fetch(API_BASE + "/api/conversation", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: makeBody({ action: "timeline", type: "new" })
+                });
+                var data = await res.json();
+                if (await guardAuthResponse(res, data)) return;
+                if (Array.isArray(data)) {
+                    // 先在内存中完成图片指令解析，再一次性替换 DOM，避免处理期间聊天区变成空白。
+                    var renderedMessages = [];
+                    var hrProcessed = false;
+                    // 后端返回最新→最旧（Misskey timeline 默认降序），逆序渲染为正序
+                    for (var i = data.length - 1; i >= 0; i--) {
+                        var msg = data[i];
+                        var role = msg.role === "user" ? "player" : "aliya";
+                        var cleanContent = msg.content;
+                        var images = [];
+                        if (role === "aliya") {
+                            var processed = await processDrawingInstruction(msg.content, msg.id);
+                            cleanContent = processed.text;
+                            images = processed.images;
+                            var hrResult = processHeartRateInstruction(cleanContent);
+                            cleanContent = hrResult.text;
+                            // 只在最新一条 aliya 消息时决定是否恢复默认心率
+                            if (!hrProcessed) {
+                                if (!hrResult.matched) {
+                                    currentRange = ranges.medium;
+                                    updateDisplay();
+                                }
+                                hrProcessed = true;
                             }
-                            hrProcessed = true;
+                        }
+                        renderedMessages.push({ role: role, content: cleanContent, images: images, id: msg.id });
+                    }
+                    aliyaText.innerHTML = "";
+                    earliestMsgId = null;
+                    noMoreHistory = data.length < 30;
+                    for (var renderedIndex = 0; renderedIndex < renderedMessages.length; renderedIndex++) {
+                        var rendered = renderedMessages[renderedIndex];
+                        if (rendered.role === "aliya") {
+                            renderAliyaMessage(rendered.content, rendered.images, true);
+                        } else {
+                            appendMessage(rendered.role, rendered.content, null, rendered.images, rendered.id);
                         }
                     }
-                    if (role === "aliya") {
-                        renderAliyaMessage(cleanContent, images, true);
-                    } else {
-                        appendMessage(role, cleanContent, null, images, msg.id);
+                    // 记录最老一条消息的 id，供下拉加载使用
+                    if (data.length > 0) {
+                        // data[0] 是最新，data[length-1] 是最旧
+                        earliestMsgId = data[data.length - 1].id;
                     }
+                    requestAnimationFrame(() => { aliyaText.scrollTop = aliyaText.scrollHeight; });
+                } else if (data && data.error) {
+                    failed = true;
+                    throw new Error(data.error);
                 }
-                // 记录最老一条消息的 id，供下拉加载使用
-                if (data.length > 0) {
-                    // data[0] 是最新，data[length-1] 是最旧
-                    earliestMsgId = data[data.length - 1].id;
-                    // 如果首次拉取不足一页，说明没有更多历史了
-                    if (data.length < 30) { noMoreHistory = true; }
-                }
-                requestAnimationFrame(() => { aliyaText.scrollTop = aliyaText.scrollHeight; });
+            } catch (err) {
+                failed = true;
+                console.log("获取时间线失败：", err);
+            } finally {
+                isTimelineLoading = false;
+                if (failed) showChatLoadingError("加载聊天记录失败，已保留当前内容");
+                else setChatLoading(false);
             }
-        } catch (err) { console.log("获取时间线失败：", err); }
+        })();
+        try {
+            return await timelineLoadPromise;
+        } finally {
+            timelineLoadPromise = null;
+        }
     }
 
     // 下拉加载更多历史消息
     async function loadMoreHistory() {
         if (isLoadingMore || noMoreHistory || earliestMsgId === null) return;
         isLoadingMore = true;
+        setChatLoading(true, "正在加载更早的消息...", "top");
         // 记录当前滚动位置，加载后恢复，避免跳到底部
         var oldScrollHeight = aliyaText.scrollHeight;
 
@@ -1255,6 +1316,7 @@ document.addEventListener("DOMContentLoaded", function (event) {
             console.log("加载历史消息失败：", err);
         } finally {
             isLoadingMore = false;
+            setChatLoading(false);
         }
     }
 
@@ -1374,27 +1436,45 @@ document.addEventListener("DOMContentLoaded", function (event) {
         }
     }
 
+    async function uploadSelectedImage(file) {
+        var body = new FormData();
+        body.append("file", file);
+        var res = await fetch(API_BASE + "/api/upload_image", {
+            method: "POST",
+            headers: { "X-Aliya-Token": mskToken },
+            body: body
+        });
+        var data = await res.json();
+        if (!res.ok || !data.id) throw new Error(data.error || "图片上传失败");
+        return data.id;
+    }
+
     async function sendMessage() {
         var content = playerInput.value.trim();
-        if (!content) return;
-        appendMessage("player", content);
+        var file = imageInput && imageInput.files && imageInput.files[0];
+        if (!content && !file) return;
+        var displayContent = content || "[图片消息]";
+        appendMessage("player", displayContent);
         playerInput.value = "";
-        setWaiting(true);
-        recentlySentSet[content] = true;
-        setTimeout(function () { delete recentlySentSet[content]; }, 8000);
+        if (imageInput) imageInput.value = "";
+        setWaiting(true, file ? "正在上传图片..." : "正在发送...");
+        recentlySentSet[displayContent] = true;
+        setTimeout(function () { delete recentlySentSet[displayContent]; }, 8000);
         try {
+            var fileId = file ? await uploadSelectedImage(file) : null;
+            setWaiting(true, "正在等待 Aliya 回复...");
             var controller = new AbortController();
             var timeoutId = setTimeout(function() { controller.abort(); }, 125000);
             var res = await fetch(API_BASE + "/api/chat", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: makeBody({ message: content }),
+                body: makeBody({ message: content, file_id: fileId }),
                 signal: controller.signal
             });
             clearTimeout(timeoutId);
             var data = await res.json();
-            if (await guardAuthResponse(res, data)) return;
-            if (data.status === "success" && data.assistant_message) {
+            if (await guardAuthResponse(res, data)) { setWaiting(false); return; }
+            if (data.status === "success" && data.assistant_message !== undefined) {
                 var rawText = data.assistant_message;
                 var msgId = data.assistant_message_id;
                 var processed = await processDrawingInstruction(rawText, msgId);
@@ -1492,9 +1572,17 @@ document.addEventListener("DOMContentLoaded", function (event) {
     var opCreateBtn = document.getElementById("opCreateBtn");
     var opUpdateBtn = document.getElementById("opUpdateBtn");
     var opStatus = document.getElementById("opStatus");
+    var opTimeAwarenessToggle = document.getElementById("opTimeAwarenessToggle");
+    var opRandomProactiveToggle = document.getElementById("opRandomProactiveToggle");
+    var opScheduledProactiveToggle = document.getElementById("opScheduledProactiveToggle");
+    var opProactiveNotice = document.getElementById("opProactiveNotice");
+    var opProactiveLastError = document.getElementById("opProactiveLastError");
+    var opProactiveRefreshBtn = document.getElementById("opProactiveRefreshBtn");
+    var opProactiveScheduleList = document.getElementById("opProactiveScheduleList");
     var opMemorySettingsLink = document.getElementById("opMemorySettingsLink");
     var opSessionRenameBtn = document.getElementById("opSessionRenameBtn");
     var opSessionDeleteBtn = document.getElementById("opSessionDeleteBtn");
+    var opUpdateBtnLabel = document.querySelector("#opUpdateBtn .op-btn-label");
 
     var opSessions = [];
     var opCurrentSessionId = null;
@@ -1505,7 +1593,13 @@ document.addEventListener("DOMContentLoaded", function (event) {
     var opArtistPresets = [];
     var opModelSuccessRates = {};
     var opCurrentPage = "session";
+    var opRandomProactiveEnabled = false;
+    var opScheduledProactiveEnabled = false;
+    var opProactiveSchedules = [];
+    var opProactiveSchedulesLoading = false;
+    var opProactiveScheduleMutating = null;
     var opPanelLoadPromise = null;
+    var opUpdateInFlight = false;
     var opSegmentSaving = false;
     var opSessionActionBusy = false;
     var opFallbackImageModels = [{
@@ -1531,6 +1625,203 @@ document.addEventListener("DOMContentLoaded", function (event) {
         opStatus.className = "op-status" + (type ? " " + type : "");
     }
 
+    function opSetUpdateBusy(busy) {
+        opUpdateInFlight = busy === true;
+        if (!opUpdateBtn) return;
+        opUpdateBtn.disabled = opUpdateInFlight;
+        opUpdateBtn.classList.toggle("is-loading", opUpdateInFlight);
+        opUpdateBtn.setAttribute("aria-busy", opUpdateInFlight ? "true" : "false");
+        if (opUpdateBtnLabel) opUpdateBtnLabel.textContent = opUpdateInFlight ? "保存中..." : "保存";
+    }
+
+    function opSyncProactiveNotice() {
+        if (!opProactiveNotice) return;
+        var enabled = opTimeAwarenessToggle && opTimeAwarenessToggle.checked === true;
+        opProactiveNotice.hidden = enabled;
+        opProactiveNotice.textContent = enabled ? "" : "请先在“会话”页面开启时间感知，才能启用主动消息。";
+    }
+
+    function opFormatProactiveDate(value) {
+        if (!value) return "";
+        var date = new Date(value);
+        if (Number.isNaN(date.getTime())) return String(value);
+        return new Intl.DateTimeFormat("zh-CN", {
+            timeZone: "Asia/Shanghai",
+            year: "numeric", month: "2-digit", day: "2-digit",
+            hour: "2-digit", minute: "2-digit", hour12: false
+        }).format(date).replace(/\//g, "-");
+    }
+
+    function opProactiveStatusLabel(status) {
+        return status === "active" ? "执行中" : status === "paused" ? "已暂停" : status === "completed" ? "已完成" : "已取消";
+    }
+
+    function opProactiveTriggerLabel(schedule) {
+        var trigger = schedule && schedule.trigger || {};
+        if (trigger.type === "once") return "一次性 · " + (trigger.at ? opFormatProactiveDate(trigger.at) : "未设置时间");
+        var repeat = trigger.repeat && trigger.repeat.mode === "count"
+            ? "重复 " + trigger.repeat.count + " 次"
+            : "无限重复";
+        return repeat + " · " + (trigger.cron || "未设置规则");
+    }
+
+    function opProactiveRemainingLabel(value) {
+        return value == null ? "无限重复" : "剩余 " + value + " 次";
+    }
+
+    function opRenderProactiveSchedules() {
+        if (!opProactiveScheduleList) return;
+        opProactiveScheduleList.innerHTML = "";
+        if (opProactiveSchedulesLoading) {
+            opProactiveScheduleList.innerHTML = '<div class="op-proactive-empty"><span class="op-loading-spinner"></span>正在加载定时计划...</div>';
+            return;
+        }
+        if (!opCurrentSessionId) {
+            opProactiveScheduleList.innerHTML = '<div class="op-proactive-empty">当前没有可用会话。</div>';
+            return;
+        }
+        if (!opProactiveSchedules.length) {
+            opProactiveScheduleList.innerHTML = '<div class="op-proactive-empty">当前没有定时计划。</div>';
+            return;
+        }
+        opProactiveSchedules.forEach(function(schedule) {
+            var card = document.createElement("div");
+            card.className = "op-proactive-card";
+
+            var top = document.createElement("div");
+            top.className = "op-proactive-card-top";
+            var description = document.createElement("div");
+            description.className = "op-proactive-card-description";
+            description.textContent = schedule.description || "未命名定时计划";
+            var status = document.createElement("span");
+            status.className = "op-proactive-status status-" + (schedule.status || "unknown");
+            status.textContent = opProactiveStatusLabel(schedule.status);
+            top.appendChild(description);
+            top.appendChild(status);
+            card.appendChild(top);
+
+            var meta = document.createElement("div");
+            meta.className = "op-proactive-card-meta";
+            var trigger = document.createElement("span");
+            trigger.textContent = opProactiveTriggerLabel(schedule);
+            meta.appendChild(trigger);
+            if (schedule.nextRunAt) {
+                var next = document.createElement("span");
+                next.textContent = "下次执行 " + opFormatProactiveDate(schedule.nextRunAt);
+                meta.appendChild(next);
+            }
+            if (schedule.lastRunAt) {
+                var last = document.createElement("span");
+                last.textContent = "上次执行 " + opFormatProactiveDate(schedule.lastRunAt);
+                meta.appendChild(last);
+            }
+            if (schedule.createdAt) {
+                var created = document.createElement("span");
+                created.textContent = "创建于 " + opFormatProactiveDate(schedule.createdAt);
+                meta.appendChild(created);
+            }
+            var remaining = document.createElement("span");
+            remaining.textContent = opProactiveRemainingLabel(schedule.remainingRuns);
+            meta.appendChild(remaining);
+            card.appendChild(meta);
+
+            var actions = document.createElement("div");
+            actions.className = "op-proactive-card-actions";
+            if (schedule.status === "active" || schedule.status === "paused") {
+                var toggle = document.createElement("button");
+                toggle.type = "button";
+                toggle.className = "op-proactive-action-btn";
+                toggle.textContent = schedule.status === "active" ? "暂停" : "恢复";
+                toggle.disabled = opProactiveScheduleMutating === schedule.id || (schedule.status === "paused" && (!opTimeAwarenessToggle || !opTimeAwarenessToggle.checked || !opScheduledProactiveEnabled));
+                toggle.addEventListener("click", function() { opToggleProactiveSchedule(schedule); });
+                actions.appendChild(toggle);
+            }
+            var remove = document.createElement("button");
+            remove.type = "button";
+            remove.className = "op-proactive-action-btn danger";
+            remove.textContent = "删除";
+            remove.disabled = opProactiveScheduleMutating === schedule.id;
+            remove.addEventListener("click", function() { opDeleteProactiveSchedule(schedule); });
+            actions.appendChild(remove);
+            card.appendChild(actions);
+            opProactiveScheduleList.appendChild(card);
+        });
+    }
+
+    async function opLoadProactiveSchedules() {
+        if (opProactiveSchedulesLoading) return;
+        var previousSchedules = opProactiveSchedules.slice();
+        opProactiveSchedulesLoading = true;
+        opRenderProactiveSchedules();
+        try {
+            var data = await opPostConversation({ action: "proactive_schedules", session_id: opCurrentSessionId });
+            opProactiveSchedules = Array.isArray(data) ? data : [];
+        } catch (err) {
+            opProactiveSchedules = previousSchedules;
+            if (opCurrentPage === "proactive") opShowStatus("加载定时计划失败：" + err.message, "error");
+        } finally {
+            opProactiveSchedulesLoading = false;
+            opRenderProactiveSchedules();
+        }
+    }
+
+    async function opSaveProactiveSetting(kind, enabled) {
+        if (!opTimeAwarenessToggle || !opTimeAwarenessToggle.checked) {
+            if (kind === "random" && opRandomProactiveToggle) opRandomProactiveToggle.checked = opRandomProactiveEnabled;
+            if (kind === "scheduled" && opScheduledProactiveToggle) opScheduledProactiveToggle.checked = opScheduledProactiveEnabled;
+            opShowStatus("请先开启时间感知", "error");
+            return;
+        }
+        var previous = kind === "random" ? opRandomProactiveEnabled : opScheduledProactiveEnabled;
+        var payload = { action: "update" };
+        payload[kind === "random" ? "random_proactive_enabled" : "scheduled_proactive_enabled"] = enabled;
+        try {
+            await opPostConversation(payload);
+            if (kind === "random") opRandomProactiveEnabled = enabled;
+            else opScheduledProactiveEnabled = enabled;
+            opShowStatus("主动消息设置已保存", "success");
+            if (kind === "scheduled" && enabled) await opLoadProactiveSchedules();
+            else opRenderProactiveSchedules();
+        } catch (err) {
+            if (kind === "random" && opRandomProactiveToggle) opRandomProactiveToggle.checked = previous;
+            if (kind === "scheduled" && opScheduledProactiveToggle) opScheduledProactiveToggle.checked = previous;
+            opShowStatus("主动消息设置失败：" + err.message, "error");
+        }
+    }
+
+    async function opToggleProactiveSchedule(schedule) {
+        if (opProactiveScheduleMutating) return;
+        var status = schedule.status === "active" ? "paused" : "active";
+        opProactiveScheduleMutating = schedule.id;
+        opRenderProactiveSchedules();
+        try {
+            var result = await opPostConversation({ action: "set_proactive_status", session_id: opCurrentSessionId, schedule_id: schedule.id, status: status });
+            if (result && result.status === "completed") opShowStatus("一次性计划已完成，无法恢复", "error");
+            await opLoadProactiveSchedules();
+        } catch (err) {
+            opShowStatus("修改定时计划失败：" + err.message, "error");
+        } finally {
+            opProactiveScheduleMutating = null;
+            opRenderProactiveSchedules();
+        }
+    }
+
+    async function opDeleteProactiveSchedule(schedule) {
+        if (opProactiveScheduleMutating || !window.confirm("确定删除这个定时计划？")) return;
+        opProactiveScheduleMutating = schedule.id;
+        opRenderProactiveSchedules();
+        try {
+            await opPostConversation({ action: "delete_proactive_schedule", session_id: opCurrentSessionId, schedule_id: schedule.id });
+            await opLoadProactiveSchedules();
+            opShowStatus("定时计划已删除", "success");
+        } catch (err) {
+            opShowStatus("删除定时计划失败：" + err.message, "error");
+        } finally {
+            opProactiveScheduleMutating = null;
+            opRenderProactiveSchedules();
+        }
+    }
+
     function opSyncSegmentToggle() {
         if (opSegToggle) opSegToggle.checked = segConfig.enabled === true;
     }
@@ -1545,7 +1836,13 @@ document.addEventListener("DOMContentLoaded", function (event) {
                 btn.classList.toggle("active", btn.getAttribute("data-op-target") === opCurrentPage);
             });
         }
+        if (opUpdateBtn) opUpdateBtn.style.display = opCurrentPage === "proactive" ? "none" : "";
         if (opCurrentPage === "memory") opSyncMemorySettingsLink();
+        if (opCurrentPage === "proactive") {
+            opSyncProactiveNotice();
+            opRenderProactiveSchedules();
+            if (opCurrentSessionId) opLoadProactiveSchedules();
+        }
     }
 
     function opSyncMemorySettingsLink() {
@@ -1677,7 +1974,8 @@ document.addEventListener("DOMContentLoaded", function (event) {
 
     function opRenderAgentModelLoading() {
         var group = document.getElementById("cfgAgentModel");
-        if (group) group.innerHTML = '<div class="op-image-loading"><span class="op-loading-spinner"></span><span>正在加载对话模型...</span></div>';
+        if (group && opAgentModels.length > 0) group.classList.add("is-loading");
+        else if (group) group.innerHTML = '<div class="op-image-loading"><span class="op-loading-spinner"></span><span>正在加载对话模型...</span></div>';
         var currentEl = document.getElementById("opAgentModelCurrent");
         if (currentEl) currentEl.textContent = "...";
     }
@@ -1685,6 +1983,7 @@ document.addEventListener("DOMContentLoaded", function (event) {
     function opRenderAgentModels(selectedId) {
         var group = document.getElementById("cfgAgentModel");
         if (!group) return;
+        group.classList.remove("is-loading");
         group.innerHTML = "";
 
         if (opAgentModels.length === 0) {
@@ -1735,13 +2034,16 @@ document.addEventListener("DOMContentLoaded", function (event) {
     function opRenderImageLoading() {
         var modelGroup = document.getElementById("cfgAgentImageModel");
         var presetGroup = document.getElementById("cfgImgArtistPresetId");
-        if (modelGroup) modelGroup.innerHTML = '<div class="op-image-loading"><span class="op-loading-spinner"></span><span>正在加载模型...</span></div>';
-        if (presetGroup) presetGroup.innerHTML = '<div class="op-image-loading"><span class="op-loading-spinner"></span><span>正在加载画师串...</span></div>';
+        if (modelGroup && opImageModels.length > 0) modelGroup.classList.add("is-loading");
+        else if (modelGroup) modelGroup.innerHTML = '<div class="op-image-loading"><span class="op-loading-spinner"></span><span>正在加载模型...</span></div>';
+        if (presetGroup && (opArtistPresets.length > 0 || presetGroup.querySelector(".op-artist-card"))) presetGroup.classList.add("is-loading");
+        else if (presetGroup) presetGroup.innerHTML = '<div class="op-image-loading"><span class="op-loading-spinner"></span><span>正在加载画师串...</span></div>';
     }
 
     function opRenderImageModels(selectedId) {
         var group = document.getElementById("cfgAgentImageModel");
         if (!group) return;
+        group.classList.remove("is-loading");
         group.innerHTML = "";
 
         function appendModelCard(model) {
@@ -1750,7 +2052,10 @@ document.addEventListener("DOMContentLoaded", function (event) {
             card.type = "button";
             card.className = "op-choice-card op-model-card";
             card.setAttribute("data-value", value);
-            if (model.apiModelName) card.title = "API 模型：" + model.apiModelName;
+            var modelHints = [];
+            if (model.apiModelName) modelHints.push("API 模型：" + model.apiModelName);
+            if (model.description) modelHints.push(model.description);
+            if (modelHints.length) card.title = modelHints.join("\n");
 
             var head = document.createElement("div");
             head.className = "op-model-card-head";
@@ -1775,6 +2080,7 @@ document.addEventListener("DOMContentLoaded", function (event) {
             } else {
                 var rate = opSuccessRateInfo(value);
                 chips.appendChild(opCreateMetaChip("提供商", opProviderLabel(model.provider), ""));
+                if (model.supportsReferenceImage === true) chips.appendChild(opCreateMetaChip("参考图", "支持", "highlight"));
                 chips.appendChild(opCreateMetaChip("费用", opFormatModelCost(model.costPerCall), Number(model.costPerCall) === 0 ? "highlight" : ""));
                 chips.appendChild(opCreateMetaChip("1h 成功率", rate.text, rate.className));
             }
@@ -1791,6 +2097,7 @@ document.addEventListener("DOMContentLoaded", function (event) {
     function opRenderArtistPresets(selectedId) {
         var group = document.getElementById("cfgImgArtistPresetId");
         if (!group) return;
+        group.classList.remove("is-loading");
         group.innerHTML = "";
         var presets = opArtistPresets.length > 0 ? opArtistPresets : opFallbackArtistPresets;
         if (presets.length === 0) {
@@ -1990,7 +2297,8 @@ document.addEventListener("DOMContentLoaded", function (event) {
             img_size: opGetChoiceValue("cfgImgSize", "landscape"),
             img_artist_preset_id: opGetChoiceValue("cfgImgArtistPresetId", "default-anime"),
             agent_image_model_id: opGetChoiceValue("cfgAgentImageModel", "aob0wkxmi3"),
-            segmented_output_enabled: segConfig.enabled === true
+            segmented_output_enabled: segConfig.enabled === true,
+            time_awareness_enabled: opTimeAwarenessToggle?.checked === true
         };
         if (opAgentModels.length > 0) {
             var defaultAgentModelId = opResolvedAgentDefaultModelId();
@@ -2001,6 +2309,11 @@ document.addEventListener("DOMContentLoaded", function (event) {
     }
 
     function opRenderSessionLoading() {
+        if (opSessions.length > 0) {
+            opSessionList.classList.add("is-loading");
+            return;
+        }
+        opSessionList.classList.remove("is-loading");
         opSessionList.innerHTML =
             '<div class="op-session-loading">' +
                 '<span class="op-session-loading-spinner"></span>' +
@@ -2009,6 +2322,7 @@ document.addEventListener("DOMContentLoaded", function (event) {
     }
 
     function opRenderSessions() {
+        opSessionList.classList.remove("is-loading");
         opSessionList.innerHTML = "";
         var visibleSessions = opSessions.filter(function(session) { return !!session; });
         if (visibleSessions.length === 0) {
@@ -2073,6 +2387,7 @@ document.addEventListener("DOMContentLoaded", function (event) {
     }
 
     async function opLoadSessions() {
+        var previousSessions = opSessions.slice();
         opRenderSessionLoading();
         try {
             var res = await fetch(API_BASE + "/api/conversation", {
@@ -2090,8 +2405,9 @@ document.addEventListener("DOMContentLoaded", function (event) {
             opRenderSessions();
         } catch (err) {
             console.log("加载会话列表失败：", err);
-            opSessions = [];
+            opSessions = previousSessions;
             opRenderSessions();
+            opShowStatus("加载会话列表失败，已保留当前列表", "error");
         }
     }
 
@@ -2120,6 +2436,19 @@ document.addEventListener("DOMContentLoaded", function (event) {
             } else {
                 loadSegConfig();
             }
+            if (opTimeAwarenessToggle && typeof data.timeAwarenessEnabled === "boolean") opTimeAwarenessToggle.checked = data.timeAwarenessEnabled;
+            opRandomProactiveEnabled = data.randomProactiveEnabled === true;
+            opScheduledProactiveEnabled = data.scheduledProactiveEnabled === true;
+            if (opRandomProactiveToggle) opRandomProactiveToggle.checked = opRandomProactiveEnabled;
+            if (opScheduledProactiveToggle) opScheduledProactiveToggle.checked = opScheduledProactiveEnabled;
+            opSyncProactiveNotice();
+            if (opProactiveLastError) {
+                var errorLines = [];
+                if (data.randomProactiveLastError) errorLines.push("上次随机主动消息执行失败，本次已跳过。");
+                if (data.scheduledProactiveLastError) errorLines.push("上次定时主动消息执行失败，本次已跳过。");
+                opProactiveLastError.hidden = errorLines.length === 0;
+                opProactiveLastError.textContent = errorLines.join(" ");
+            }
             opSyncSegmentToggle();
 
             // 对话模型
@@ -2133,6 +2462,7 @@ document.addEventListener("DOMContentLoaded", function (event) {
             opSetChoiceValue("cfgAgentImageModel", data.agentImageModelId || "", "");
 
             opSyncMemorySettingsLink();
+            if (opCurrentPage === "proactive") opLoadProactiveSchedules();
 
         } catch (err) {
             console.log("加载会话配置失败：", err);
@@ -2235,6 +2565,9 @@ document.addEventListener("DOMContentLoaded", function (event) {
     opOverlay.addEventListener("click", function(e) {
         if (e.target === opOverlay) opClosePanel();
     });
+    if (opRandomProactiveToggle) opRandomProactiveToggle.addEventListener("change", function() { opSaveProactiveSetting("random", opRandomProactiveToggle.checked === true); });
+    if (opScheduledProactiveToggle) opScheduledProactiveToggle.addEventListener("change", function() { opSaveProactiveSetting("scheduled", opScheduledProactiveToggle.checked === true); });
+    if (opProactiveRefreshBtn) opProactiveRefreshBtn.addEventListener("click", opLoadProactiveSchedules);
     if (opSubnav) {
         opSubnav.addEventListener("click", function(e) {
             var target = e.target.closest("[data-op-target]");
@@ -2291,7 +2624,8 @@ document.addEventListener("DOMContentLoaded", function (event) {
     }
 
     async function opDoUpdate(isAutoCall) {
-        opUpdateBtn.disabled = true;
+        if (opUpdateInFlight) return;
+        opSetUpdateBusy(true);
         opShowStatus(isAutoCall ? "正在更新配置..." : "正在更新配置...");
         try {
             var config = opCollectConfig();
@@ -2310,7 +2644,7 @@ document.addEventListener("DOMContentLoaded", function (event) {
                 if (!isAutoCall) {
                     opClosePanel();
                 }
-                await fetchInitialMessages();
+                if (isAutoCall) await fetchInitialMessages();
             } else {
                 opShowStatus(data.error || "更新配置失败", "error");
             }
@@ -2318,7 +2652,7 @@ document.addEventListener("DOMContentLoaded", function (event) {
             console.log("更新配置失败：", err);
             opShowStatus("更新配置失败：" + err.message, "error");
         } finally {
-            opUpdateBtn.disabled = false;
+            opSetUpdateBusy(false);
         }
     }
 

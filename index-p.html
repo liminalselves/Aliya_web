@@ -80,6 +80,10 @@
 
 
                     </div>
+                    <div class="chat-loading-state" id="chatLoadingState" role="status" aria-live="polite" hidden>
+                        <span class="chat-loading-spinner" aria-hidden="true"></span>
+                        <span id="chatLoadingText">正在加载聊天记录...</span>
+                    </div>
                     <div class="right">
                         <div class="right_1">
                             <div class="screen">
@@ -210,17 +214,18 @@
 
                             <!-- 玩家输入区域 -->
                             <div class="player-input-area" id="playerInputArea">
-                                <textarea id="playerInput" placeholder="输入消息..."></textarea>
+                                <div class="player-compose-row">
+                                    <textarea id="playerInput" placeholder="输入消息..."></textarea>
+                                    <label class="image-upload-btn" title="添加图片" aria-label="添加图片">
+                                        <input id="imageInput" type="file" accept="image/*" hidden>
+                                    </label>
+                                </div>
                                 <button id="sendBtn">发送</button>
                             </div>
 
-                            <div class="loader" id="waitImg">
-                                <div class="rotator">
-                                    <div class="ball"></div>
-                                </div>
-                                <div class="loader-img">
-                                    <img src="./img/等待时间图.png" alt="">
-                                </div>
+                            <div class="loader" id="waitImg" role="status" aria-live="polite" hidden>
+                                <span class="loader-spinner" aria-hidden="true"></span>
+                                <span id="waitText">正在等待 Aliya 回复...</span>
                             </div>
 
 
@@ -249,6 +254,7 @@
                 <button type="button" class="op-subnav-btn active" data-op-target="session">会话</button>
                 <button type="button" class="op-subnav-btn" data-op-target="model">模型</button>
                 <button type="button" class="op-subnav-btn" data-op-target="draw">生图</button>
+                <button type="button" class="op-subnav-btn" data-op-target="proactive">主动消息</button>
                 <button type="button" class="op-subnav-btn" data-op-target="memory">记忆</button>
             </div>
 
@@ -304,6 +310,47 @@
                 </div>
             </div>
 
+            <div class="op-page" data-op-page="proactive">
+                <div class="op-section">
+                    <div class="op-proactive-hero">
+                        <div class="op-proactive-hero-icon">◌</div>
+                        <div>
+                            <div class="op-proactive-title">主动消息</div>
+                            <div class="op-proactive-caption">让 Aliya 在合适的时间主动联系你。</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="op-proactive-notice" id="opProactiveNotice" hidden></div>
+                <div class="op-proactive-notice op-proactive-error" id="opProactiveLastError" hidden></div>
+                <div class="op-section op-proactive-settings">
+                    <label class="op-label">主动消息设置</label>
+                    <label class="op-proactive-switch-card">
+                        <input type="checkbox" id="opRandomProactiveToggle">
+                        <span class="op-proactive-switch-copy">
+                            <span class="op-proactive-switch-title">随机主动消息</span>
+                            <span class="op-proactive-switch-caption">会话静默 30 分钟后，按北京时间昼夜权重随机安排一次主动消息。</span>
+                        </span>
+                    </label>
+                    <label class="op-proactive-switch-card">
+                        <input type="checkbox" id="opScheduledProactiveToggle">
+                        <span class="op-proactive-switch-copy">
+                            <span class="op-proactive-switch-title">定时主动消息</span>
+                            <span class="op-proactive-switch-caption">Aliya 可自主创建、调整或取消最多 5 个定时计划。</span>
+                        </span>
+                    </label>
+                </div>
+                <div class="op-section">
+                    <div class="op-proactive-list-head">
+                        <div>
+                            <label class="op-label">当前定时计划</label>
+                            <div class="op-caption">计划由 Aliya 维护，你可以暂停、恢复或删除。</div>
+                        </div>
+                        <button type="button" class="op-icon-btn" id="opProactiveRefreshBtn" title="刷新计划" aria-label="刷新计划">↻</button>
+                    </div>
+                    <div class="op-proactive-list" id="opProactiveScheduleList"></div>
+                </div>
+            </div>
+
             <div class="op-page" data-op-page="memory">
                 <div class="op-section op-memory-guidance">
                     <label class="op-label">记忆功能</label>
@@ -343,13 +390,20 @@
                         <input type="checkbox" id="opSegToggle">
                         <span>分段输出</span>
                     </label>
+                    <label class="settings-toggle-row op-toggle-row">
+                        <input type="checkbox" id="opTimeAwarenessToggle">
+                        <span>时间感知</span>
+                    </label>
                     <div class="op-caption">开启后，完整回复仍保存为一条消息，但前端会按换行和完整语法结构逐段播放。</div>
                 </div>
             </div>
 
             <!-- 操作按钮 -->
             <div class="op-actions">
-                <button id="opUpdateBtn" class="op-btn op-btn-update" type="button">保存</button>
+                <button id="opUpdateBtn" class="op-btn op-btn-update" type="button">
+                    <span class="op-btn-label">保存</span>
+                    <span class="op-btn-spinner" aria-hidden="true"></span>
+                </button>
             </div>
             <div class="op-status" id="opStatus"></div>
         </div>
