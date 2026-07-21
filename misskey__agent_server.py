@@ -38,6 +38,7 @@ DIALOGUE_STYLE_ID = "aofoi210vawt01t4"
 MAX_REQUEST_BYTES = 16 * 1024 * 1024
 MAX_MESSAGE_CHARS = 16000
 METADATA_CACHE_MAX_ENTRIES = 256
+TIMELINE_POLL_CACHE_TTL = 25
 
 app = Flask(__name__)
 app.config["MAX_CONTENT_LENGTH"] = MAX_REQUEST_BYTES
@@ -523,22 +524,39 @@ def get_messages():
 
 @app.route("/api/poll", methods=["GET", "POST"])
 def poll():
-    """轮询：返回 since_id 之后的新消息"""
+    """轮询 MSK 权威时间线快照，用于同步主动消息、编辑与回溯删除。"""
     data = request.get_json(silent=True) or {}
     token = _token_from_request(data)
     if not token:
         return jsonify({"error": "缺少鉴权 token"}), 401
-    since_raw = data.get("since", request.args.get("since", 0)) if isinstance(data, dict) else request.args.get("since", 0)
+
     try:
-        since = int(since_raw or 0)
-    except (TypeError, ValueError):
-        since = 0
-    with _lock:
-        new_msgs = [
-            _public_message(m) for m in _messages_for_token(token)
-            if int(m.get("id", m.get("id ", 0)) or 0) > since
-        ]
-    return jsonify({"messages": new_msgs})
+        session_id = _current_or_requested_session_id(data, token)
+        namespace = _timeline_cache_namespace(session_id)
+        messages = _cached_metadata(
+            namespace,
+            token,
+            TIMELINE_POLL_CACHE_TTL,
+            lambda: _timeline_messages_data(token, session_id, limit=30),
+        )
+        return jsonify({
+            "messages": messages,
+            "session_id": session_id,
+            "snapshot": True,
+        })
+    except PermissionError as e:
+        return jsonify({"error": str(e)}), 403
+    except requests.exceptions.HTTPError as e:
+        status = e.response.status_code if e.response is not None else 500
+        detail = e.response.text if e.response is not None else str(e)
+        logging.error(f"轮询消息时间线失败 {status}: {detail}")
+        return jsonify({"error": f"轮询消息时间线失败: {status}", "detail": detail}), status
+    except requests.exceptions.RequestException as e:
+        logging.error(f"轮询消息时间线请求异常: {e}")
+        return jsonify({"error": str(e)}), 500
+    except (KeyError, TypeError, ValueError) as e:
+        logging.error(f"解析轮询消息时间线失败: {e}")
+        return jsonify({"error": f"数据解析失败: {str(e)}"}), 500
 
 @app.route("/api/chat", methods=["POST"])
 def chat():
@@ -610,7 +628,7 @@ def conversation():
     elif action == "switch_session":
         return switch_session(data, token)
     elif action == "timeline":
-        return timeline(data.get("type"), data.get("last_id"), token)
+        return timeline(data, token)
     elif action == "image_models":
         return list_image_models(token)
     elif action == "image_presets":
@@ -692,6 +710,10 @@ def _current_or_requested_session_id(data, token):
     if not session_id:
         return _ensure_session_id(token)
 
+    # 时间线轮询会反复携带当前会话；命中缓存时不要再次请求 sessions/show。
+    if session_id == _get_cached_session_id(token):
+        return session_id
+
     session = _show_session_data(token, session_id)
     if not _is_aliya_session(session):
         raise PermissionError("只能操作 Aliya 角色的会话")
@@ -719,18 +741,20 @@ def _update_session(data, token):
     """向 Misskey 更新会话"""
     try:
         _ensure_required_style_subscription(token)
-        session_id = _ensure_session_id(token)
+        session_id = _current_or_requested_session_id(data, token)
     except Exception as e:
         logging.error(f"准备更新会话前获取会话失败: {e}")
         return jsonify({"error": str(e)}), 500
     url = "https://misskey.liminalselves.top/api/agents/sessions/update"
     payload = {
-        "agentImageModelId": _image_model_id_from_data(data),
         "i": token,
         "sessionId": session_id,
         "dialogueStyleId": DIALOGUE_STYLE_ID,
-        "agentImageSettings": _build_image_settings(data),
     }
+    if "agent_image_model_id" in data:
+        payload["agentImageModelId"] = _image_model_id_from_data(data)
+    if "img_size" in data or "img_artist_preset_id" in data:
+        payload["agentImageSettings"] = _build_image_settings(data)
     if "agent_model_id" in data:
         payload["agentModelId"] = _agent_model_id_from_data(data)
     if "segmented_output_enabled" in data:
@@ -914,13 +938,15 @@ def credit_balance(token):
 
 def update_segmented_output(data, token):
     try:
-        session_id = _ensure_session_id(token)
+        session_id = _current_or_requested_session_id(data, token)
         enabled = _bool_from_data(data, "enabled")
         result = _misskey_api_post(token, "agents/sessions/update", {
             "sessionId": session_id,
             "segmentedOutputEnabled": enabled,
         })
         return jsonify({"status": "success", "data": result}), 200
+    except PermissionError as e:
+        return jsonify({"error": str(e)}), 403
     except requests.exceptions.HTTPError as e:
         status = e.response.status_code if e.response is not None else 500
         detail = e.response.text if e.response is not None else str(e)
@@ -1026,59 +1052,71 @@ def list_mine(token):
         logging.error(f"解析会话列表数据异常: {e}")
         return jsonify({"error": f"数据解析失败: {str(e)}"}), 500
     
-def timeline(_type, last_id, token):
-    """获取消息时间线"""
-    try:
-        session_id = _ensure_session_id(token)
-    except Exception as e:
-        logging.error(f"获取时间线前获取会话失败: {e}")
-        return jsonify({"error": str(e)}), 500
-    url = "https://misskey.liminalselves.top/api/agents/messages/timeline"
-    if _type == "new":
-        payload = {
-            "i": token,
-            "limit": 30,
-            "sessionId": session_id,
-        }
-    elif _type == "old":
-        payload = {
-            "i": token,
-            "limit": 30,
-            "sessionId": session_id,
-            "untilId": last_id
-        }
+def _timeline_cache_namespace(session_id):
+    return f"timeline:{session_id}"
+
+
+def _timeline_messages_data(token, session_id, limit=30, until_id=None, since_id=None):
+    """从 MSK 获取指定会话的权威消息快照。"""
+    payload = {
+        "limit": limit,
+        "sessionId": session_id,
+    }
+    if until_id:
+        payload["untilId"] = until_id
+    if since_id:
+        payload["sinceId"] = since_id
+
+    data = _misskey_api_post(token, "agents/messages/timeline", payload)
+    if not isinstance(data, list):
+        raise ValueError("时间线响应不是消息数组")
+
+    messages_list = []
+    for item in data:
+        if not isinstance(item, dict) or item.get("isInternal") is True:
+            continue
+        messages_list.append({
+            "id": item.get("id"),
+            "role": item.get("role"),
+            "content": item.get("content"),
+            "createdAt": item.get("createdAt"),
+            "file": item.get("file"),
+            "imageRecognitionStatus": item.get("imageRecognitionStatus"),
+            "imageRecognitionDescription": item.get("imageRecognitionDescription"),
+            "proactiveScheduleActionTypes": item.get("proactiveScheduleActionTypes", []),
+            "proactiveScheduleControlFailed": item.get("proactiveScheduleControlFailed", False),
+        })
+    return messages_list
+
+
+def timeline(data, token):
+    """获取消息时间线；页面刷新直接读取 MSK，不使用轮询缓存。"""
+    timeline_type = data.get("type")
+    if timeline_type == "new":
+        until_id = None
+    elif timeline_type == "old":
+        until_id = data.get("last_id")
     else:
         return jsonify({"error": "不支持的 timeline type"}), 400
-    headers = {
-        "Content-Type": "application/json",
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-        "Accept": "application/json, text/plain, */*",
-        "Origin": f"https://{MSK_HOST}",
-    }
+
     try:
-        resp = _http_post(url, json=payload, headers=headers, timeout=30)
-        resp.raise_for_status()
-        data = resp.json()
-        
-        messages_list = []
-        for item in data:
-            if item.get("isInternal") is True:
-                continue
-            messages_list.append({
-                "id": item.get("id"),
-                "role": item.get("role"),
-                "content": item.get("content"),
-                "file": item.get("file"),
-                "imageRecognitionStatus": item.get("imageRecognitionStatus"),
-                "imageRecognitionDescription": item.get("imageRecognitionDescription"),
-                "proactiveScheduleActionTypes": item.get("proactiveScheduleActionTypes", []),
-                "proactiveScheduleControlFailed": item.get("proactiveScheduleControlFailed", False),
-            })
+        session_id = _current_or_requested_session_id(data, token)
+        messages_list = _timeline_messages_data(token, session_id, limit=30, until_id=until_id)
+        if timeline_type == "new":
+            # 防止页面刷新取得新快照后，被轮询缓存中的旧快照覆盖。
+            _invalidate_metadata(_timeline_cache_namespace(session_id), token)
         return jsonify(messages_list), 200
+    except PermissionError as e:
+        return jsonify({"error": str(e)}), 403
+    except requests.exceptions.HTTPError as e:
+        status = e.response.status_code if e.response is not None else 500
+        detail = e.response.text if e.response is not None else str(e)
+        logging.error(f"获取消息时间线失败 {status}: {detail}")
+        return jsonify({"error": f"获取消息时间线失败: {status}", "detail": detail}), status
     except requests.exceptions.RequestException as e:
         logging.error(f"获取消息时间线请求异常: {e}")
         return jsonify({"error": str(e)}), 500
-    except (KeyError, ValueError) as e:
+    except (KeyError, TypeError, ValueError) as e:
         logging.error(f"解析消息时间线数据异常: {e}")
         return jsonify({"error": f"数据解析失败: {str(e)}"}), 500
 
@@ -1171,6 +1209,7 @@ def _send_to_misskey(text, token, file_id=None):
         resp = _http_post(url, json=payload, headers=headers, timeout=120)
         if resp.status_code in (200, 201):
             _invalidate_metadata("credit_balance", token)
+            _invalidate_metadata(_timeline_cache_namespace(session_id), token)
             logging.info(">>> 消息已成功发送到 Misskey")
             try:
                 data = resp.json()
@@ -1194,6 +1233,7 @@ def _send_to_misskey(text, token, file_id=None):
                 return True
         elif resp.status_code == 204:
             _invalidate_metadata("credit_balance", token)
+            _invalidate_metadata(_timeline_cache_namespace(session_id), token)
             logging.info(">>> 消息已发送")
             return True
         else:
@@ -1244,6 +1284,14 @@ async def _listen_misskey():
                     if data.get("type") != "channel":
                         continue
                     body = data.get("body", {})
+                    if body.get("type") == "notification":
+                        notification = body.get("body", {})
+                        if notification.get("type") == "agentProactiveMessage":
+                            session_id = notification.get("sessionId")
+                            if isinstance(session_id, str) and session_id:
+                                _invalidate_metadata(_timeline_cache_namespace(session_id), token)
+                                logging.info(f"<<< 收到主动消息通知，会话时间线已标记刷新: {session_id}")
+                        continue
                     if body.get("type") != "newChatMessage":
                         continue
                     msg = body.get("body", {})

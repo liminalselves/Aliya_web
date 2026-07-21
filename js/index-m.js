@@ -247,13 +247,20 @@ document.addEventListener("DOMContentLoaded", function (event) {
     ];
     let currentIndex = 0;
     let currentPos = 0;
-    const speed = 5;
+    const ECG_CYCLE_DURATION_MS = 1000;
     const tailPoints = [];
     const tailMaxLength = 60;
     let isLooping = false;
-    const GRADIENT_FALLOFF = 0.03;  
+    const GRADIENT_FALLOFF = 0.03;
     const reduceMotionQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
     let ecgAnimationFrame = null;
+    let ecgLastTimestamp = null;
+    let ecgTotalLength = 0;
+    for (let pointIndex = 0; pointIndex < ecgPoints.length - 1; pointIndex++) {
+        const start = ecgPoints[pointIndex];
+        const end = ecgPoints[pointIndex + 1];
+        ecgTotalLength += Math.sqrt(Math.pow(end.x - start.x, 2) + Math.pow(end.y - start.y, 2));
+    }
 
     function ecgShouldAnimate() {
         return !document.hidden && !reduceMotionQuery.matches;
@@ -308,10 +315,33 @@ document.addEventListener("DOMContentLoaded", function (event) {
         });
         ctx.globalCompositeOperation = 'source-over';
     }
-    
-    function draw() {
+
+    function advanceEcgPosition(distance) {
+        while (distance > 0) {
+            const startPoint = ecgPoints[currentIndex];
+            const endPoint = ecgPoints[currentIndex + 1];
+            const segmentLength = Math.sqrt(Math.pow(endPoint.x - startPoint.x, 2) + Math.pow(endPoint.y - startPoint.y, 2));
+            const remaining = segmentLength - currentPos;
+            if (distance < remaining) {
+                currentPos += distance;
+                return;
+            }
+            distance -= remaining;
+            currentPos = 0;
+            currentIndex = (currentIndex + 1) % (ecgPoints.length - 1);
+            if (currentIndex === 0) tailPoints.push(null);
+        }
+    }
+
+    function draw(timestamp) {
         ecgAnimationFrame = null;
-        if (!ecgShouldAnimate()) return;
+        if (!ecgShouldAnimate()) {
+            ecgLastTimestamp = null;
+            return;
+        }
+        if (ecgLastTimestamp === null) ecgLastTimestamp = timestamp;
+        const elapsedMs = Math.min(Math.max(timestamp - ecgLastTimestamp, 0), 100);
+        ecgLastTimestamp = timestamp;
         ecgCtxs.forEach(function(ctx) { ctx.clearRect(0, 0, 260, 200); });
         const startPoint = ecgPoints[currentIndex];
         const endPoint = ecgPoints[currentIndex + 1];
@@ -326,12 +356,7 @@ document.addEventListener("DOMContentLoaded", function (event) {
         tailPoints.push({ x: x, y: y });
         if (tailPoints.length > tailMaxLength) tailPoints.shift();
         ecgCtxs.forEach(function(c) { drawTrailWithGradient(c); c.beginPath(); c.arc(x, y, 1, 0, Math.PI * 2); c.fillStyle = '#fff'; c.fill(); });
-        currentPos += speed;
-        if (currentPos >= Math.sqrt(dx * dx + dy * dy)) {
-            currentPos = 0;
-            currentIndex = (currentIndex + 1) % (ecgPoints.length - 1);
-            if (currentIndex === 0) tailPoints.push(null);
-        }
+        advanceEcgPosition(ecgTotalLength * elapsedMs / ECG_CYCLE_DURATION_MS);
         ecgAnimationFrame = requestAnimationFrame(draw);
     }
     document.addEventListener("visibilitychange", onEcgMotionStateChange);
@@ -588,6 +613,15 @@ document.addEventListener("DOMContentLoaded", function (event) {
         return { text: cleanText.trim(), images: images };
     }
 
+    function timelineAttachmentImageUrls(file) {
+        if (!file || typeof file !== "object") return [];
+        var type = String(file.type || "").toLowerCase();
+        var url = file.url || file.thumbnailUrl;
+        // MSK 的 timeline 可能省略 type；这种情况下仍以图片 URL 作为兼容回退。
+        if (!url || (type && type.indexOf("image/") !== 0)) return [];
+        return [url];
+    }
+
     // 心率指令解析：[[heart_rate:min,max]]，允许空格
     function processHeartRateInstruction(text) {
         var regex = /\[\[heart_rate:\s*(\d+)\s*,\s*(\d+)\s*\]\]/g;
@@ -827,12 +861,29 @@ document.addEventListener("DOMContentLoaded", function (event) {
 
     var playerInput = document.getElementById("playerInput");
     var imageInput = document.getElementById("imageInput");
+    var imageUploadBtn = document.querySelector(".image-upload-btn");
+    var mediaUploadLabel = imageUploadBtn && imageUploadBtn.querySelector(".media-upload-label");
+    var mediaUploadMark = imageUploadBtn && imageUploadBtn.querySelector(".media-upload-mark");
     var sendBtn = document.getElementById("sendBtn");
     var playerInputArea = document.getElementById("playerInputArea");
+    var playerText = document.getElementById("playerText");
     var waitImg = document.getElementById("waitImg");
     var waitText = document.getElementById("waitText");
     var chatLoadingState = document.getElementById("chatLoadingState");
     var chatLoadingText = document.getElementById("chatLoadingText");
+
+    function syncMediaUploadState() {
+        if (!imageUploadBtn || !imageInput) return;
+        var file = imageInput.files && imageInput.files[0];
+        var hasFile = !!file;
+        imageUploadBtn.classList.toggle("has-file", hasFile);
+        imageUploadBtn.title = hasFile ? "已选择：" + file.name + "（点击更换）" : "添加图片";
+        imageUploadBtn.setAttribute("aria-label", hasFile ? "已选择图片 " + file.name + "，点击更换" : "添加图片");
+        if (mediaUploadLabel) mediaUploadLabel.textContent = hasFile ? "READY" : "MEDIA";
+        if (mediaUploadMark) mediaUploadMark.textContent = hasFile ? "✓" : "+";
+    }
+
+    if (imageInput) imageInput.addEventListener("change", syncMediaUploadState);
     var lastMsgId = 0;
     var isWaitingReply = false;
     var pollTimer = null;
@@ -846,6 +897,10 @@ document.addEventListener("DOMContentLoaded", function (event) {
     var isTimelineLoading = false;
     var timelineLoadPromise = null;
     var chatLoadingNoticeTimer = null;
+    var timelineSnapshotSignature = "";
+    var timelineSnapshotMessageIds = {};
+    var timelineRenderedItems = [];
+    var timelineRenderedSessionId = null;
 
     function stopPolling() {
         if (pollTimer) {
@@ -897,6 +952,7 @@ document.addEventListener("DOMContentLoaded", function (event) {
     var segConfig = {
         enabled: false
     };
+    var segmentPlaybackTimers = [];
 
     function segConfigStorageKey() {
         return currentSessionId ? ("aliya_seg_config:" + currentSessionId) : "aliya_seg_config";
@@ -1073,13 +1129,27 @@ document.addEventListener("DOMContentLoaded", function (event) {
         return Math.max(1000, Math.min(3000, 1000 + visibleChars * 20));
     }
 
+    function clearSegmentPlaybackTimers() {
+        segmentPlaybackTimers.forEach(function(timerId) { clearTimeout(timerId); });
+        segmentPlaybackTimers = [];
+    }
+
+    function scheduleSegmentPlayback(callback, delay) {
+        var timerId = setTimeout(function() {
+            var index = segmentPlaybackTimers.indexOf(timerId);
+            if (index !== -1) segmentPlaybackTimers.splice(index, 1);
+            callback();
+        }, delay);
+        segmentPlaybackTimers.push(timerId);
+    }
+
     // 统一的 aliya 消息渲染入口（处理分段逻辑）
     // immediate=true 时即时渲染各分段（用于历史消息），不应用延迟
-    function renderAliyaMessage(cleanContent, images, immediate) {
+    function renderAliyaMessage(cleanContent, images, immediate, messageMeta) {
         if (segConfig.enabled && cleanContent) {
             var segments = splitAssistantMessageIntoSegments(cleanContent);
             if (segments.length <= 1) {
-                appendMessage("aliya", cleanContent, null, images);
+                appendMessage("aliya", cleanContent, messageMeta && messageMeta.timestamp, images, null, messageMeta);
                 return;
             }
             var elapsed = 0;
@@ -1089,7 +1159,7 @@ document.addEventListener("DOMContentLoaded", function (event) {
                     return;
                 }
                 elapsed += agentSegmentDelayMs(seg);
-                setTimeout(function() {
+                scheduleSegmentPlayback(function() {
                     appendMessage("aliya", seg);
                 }, elapsed);
             });
@@ -1101,15 +1171,20 @@ document.addEventListener("DOMContentLoaded", function (event) {
                     });
                 } else {
                     var imgDelay = elapsed + 300;
-                    setTimeout(function() {
+                    scheduleSegmentPlayback(function() {
                         images.forEach(function(imgUrl) {
                             appendMessage("aliya", null, null, [imgUrl]);
                         });
                     }, imgDelay);
                 }
             }
+            if (messageMeta && (messageMeta.timestamp || messageMeta.proactiveScheduleControlFailed || (messageMeta.proactiveScheduleActionTypes || []).length)) {
+                var metaDelay = immediate ? 0 : elapsed + (images && images.length > 0 ? 300 : 0);
+                if (metaDelay > 0) scheduleSegmentPlayback(function() { appendMessageMeta("aliya", messageMeta); }, metaDelay);
+                else appendMessageMeta("aliya", messageMeta);
+            }
         } else {
-            appendMessage("aliya", cleanContent, null, images);
+            appendMessage("aliya", cleanContent, messageMeta && messageMeta.timestamp, images, null, messageMeta);
         }
     }
 
@@ -1124,8 +1199,124 @@ document.addEventListener("DOMContentLoaded", function (event) {
         li.appendChild(body);
     }
 
+    function parseTimelineDate(value) {
+        if (!value) return null;
+        var date = new Date(value);
+        return Number.isNaN(date.getTime()) ? null : date;
+    }
+
+    function formatTimelineDate(value) {
+        var date = parseTimelineDate(value);
+        if (!date) return "";
+        return new Intl.DateTimeFormat("zh-CN", {
+            timeZone: "Asia/Shanghai",
+            month: "numeric",
+            day: "numeric"
+        }).format(date);
+    }
+
+    function timelineDayKey(value) {
+        var date = parseTimelineDate(value);
+        if (!date) return "";
+        return new Intl.DateTimeFormat("en-CA", {
+            timeZone: "Asia/Shanghai",
+            year: "numeric",
+            month: "2-digit",
+            day: "2-digit"
+        }).format(date);
+    }
+
+    function shouldRenderTimelineDateDivider(previousTimestamp, nextTimestamp) {
+        var previousDay = timelineDayKey(previousTimestamp);
+        var nextDay = timelineDayKey(nextTimestamp);
+        return !!previousDay && !!nextDay && previousDay !== nextDay;
+    }
+
+    function appendTimelineDateDivider(previousTimestamp, nextTimestamp) {
+        var previousText = formatTimelineDate(previousTimestamp);
+        var nextText = formatTimelineDate(nextTimestamp);
+        if (!previousText || !nextText) return;
+        var li = document.createElement("li");
+        li.className = "timeline-date-divider";
+        li.setAttribute("role", "separator");
+        li.setAttribute("aria-label", "消息日期从 " + previousText + " 到 " + nextText);
+        li.innerHTML = '<span>↑ ' + previousText + '</span><span class="timeline-date-divider-line" aria-hidden="true"></span><span>' + nextText + ' ↓</span>';
+        aliyaText.appendChild(li);
+    }
+
+    function appendLiveTimelineDateDivider(timestamp) {
+        if (timelineRenderedSessionId !== currentSessionId || !timelineRenderedItems.length) return;
+        var previous = timelineRenderedItems[timelineRenderedItems.length - 1];
+        if (previous && shouldRenderTimelineDateDivider(previous.timestamp, timestamp)) {
+            appendTimelineDateDivider(previous.timestamp, timestamp);
+        }
+    }
+
+    function formatRelativeMessageTime(value) {
+        var date = parseTimelineDate(value);
+        if (!date) return "";
+        var delta = Math.max(0, Date.now() - date.getTime());
+        var minute = 60 * 1000;
+        var hour = 60 * minute;
+        var day = 24 * hour;
+        if (delta < minute) return "刚刚";
+        if (delta < hour) return Math.floor(delta / minute) + "分钟前";
+        if (delta < day) return Math.floor(delta / hour) + "小时前";
+        if (delta < 7 * day) return Math.floor(delta / day) + "天前";
+        if (delta < 30 * day) return Math.floor(delta / (7 * day)) + "周前";
+        return new Intl.DateTimeFormat("zh-CN", {
+            timeZone: "Asia/Shanghai",
+            year: "numeric",
+            month: "2-digit",
+            day: "2-digit",
+            hour: "2-digit",
+            minute: "2-digit",
+            hour12: false
+        }).format(date).replace(/\//g, "-");
+    }
+
+    function formatScheduleActionSummary(actionTypes, controlFailed) {
+        var labels = { create: "添加", update: "修改", cancel: "删除" };
+        var actions = Array.isArray(actionTypes) ? actionTypes.map(function(type) { return labels[type]; }).filter(Boolean) : [];
+        if (!actions.length && !controlFailed) return "";
+        if (!actions.length) return "日程消息操作 · 操作失败";
+        return (controlFailed ? "尝试日程消息操作：" : "日程消息操作：") + actions.join("、") + (controlFailed ? " · 操作失败" : "");
+    }
+
+    function appendMessageMeta(role, messageMeta) {
+        var timestamp = messageMeta && messageMeta.timestamp;
+        var scheduleSummary = formatScheduleActionSummary(
+            messageMeta && messageMeta.proactiveScheduleActionTypes,
+            messageMeta && messageMeta.proactiveScheduleControlFailed
+        );
+        var relativeTime = formatRelativeMessageTime(timestamp);
+        if (!scheduleSummary && !relativeTime) return;
+
+        var li = document.createElement("li");
+        li.className = "message-meta " + role;
+        if (scheduleSummary) {
+            var schedule = document.createElement("span");
+            schedule.className = "message-schedule-summary" + (messageMeta.proactiveScheduleControlFailed ? " is-failed" : "");
+            schedule.textContent = "◷ " + scheduleSummary;
+            li.appendChild(schedule);
+        }
+        if (relativeTime) {
+            var time = document.createElement("time");
+            time.className = "message-time";
+            time.dateTime = timestamp;
+            time.title = new Intl.DateTimeFormat("zh-CN", {
+                timeZone: "Asia/Shanghai",
+                year: "numeric", month: "2-digit", day: "2-digit",
+                hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false
+            }).format(parseTimelineDate(timestamp));
+            time.textContent = "◷ " + relativeTime;
+            li.appendChild(time);
+        }
+        aliyaText.appendChild(li);
+    }
+
     // 【修复】图片渲染为独立卡片
-    function appendMessage(role, content, msgTimestamp, images, msgId) {
+    function appendMessage(role, content, msgTimestamp, images, msgId, messageMeta) {
         if (content !== null && content !== undefined && String(content) !== "") {
             var li = document.createElement("li");
             li.className = role;
@@ -1148,6 +1339,9 @@ document.addEventListener("DOMContentLoaded", function (event) {
                 aliyaText.appendChild(li);
             });
         }
+        if (messageMeta || msgTimestamp) {
+            appendMessageMeta(role, Object.assign({}, messageMeta || {}, { timestamp: msgTimestamp || (messageMeta && messageMeta.timestamp) || null }));
+        }
     }
 
     function dedupMessages(msgs) {
@@ -1166,8 +1360,16 @@ document.addEventListener("DOMContentLoaded", function (event) {
     function setWaiting(isWaiting, message) {
         isWaitingReply = isWaiting;
         if (waitText && message) waitText.textContent = message;
+        if (waitImg && message) waitImg.setAttribute("aria-label", message);
         if (waitImg) waitImg.hidden = !isWaiting;
-        if (playerInputArea) playerInputArea.classList.toggle("is-waiting", isWaiting);
+        if (playerInputArea) {
+            playerInputArea.classList.toggle("is-waiting", isWaiting);
+            playerInputArea.toggleAttribute("hidden", isWaiting);
+        }
+        if (playerText) {
+            playerText.classList.toggle("is-waiting", isWaiting);
+            playerText.setAttribute("aria-busy", isWaiting ? "true" : "false");
+        }
         [playerInput, imageInput, sendBtn].forEach(function(element) {
             if (element) element.disabled = isWaiting;
         });
@@ -1196,6 +1398,127 @@ document.addEventListener("DOMContentLoaded", function (event) {
         }, 3200);
     }
 
+    function buildTimelineSnapshotSignature(messages) {
+        return JSON.stringify({
+            sessionId: currentSessionId || "",
+            messages: messages.map(function(msg) {
+                var file = msg && msg.file;
+                return [
+                    msg && msg.id,
+                    msg && msg.role,
+                    msg && msg.content,
+                    msg && msg.createdAt,
+                    file && file.id,
+                    file && file.url,
+                    file && file.thumbnailUrl,
+                    file && file.type,
+                    msg && msg.imageRecognitionStatus,
+                    msg && msg.imageRecognitionDescription,
+                    msg && msg.proactiveScheduleActionTypes,
+                    msg && msg.proactiveScheduleControlFailed
+                ];
+            })
+        });
+    }
+
+    function renderPreparedTimelineMessages(items, scrollToLatest) {
+        var oldScrollTop = aliyaText.scrollTop;
+        clearSegmentPlaybackTimers();
+        aliyaText.innerHTML = "";
+        for (var renderedIndex = 0; renderedIndex < items.length; renderedIndex++) {
+            var rendered = items[renderedIndex];
+            var messageMeta = {
+                timestamp: rendered.timestamp || null,
+                proactiveScheduleActionTypes: rendered.proactiveScheduleActionTypes || [],
+                proactiveScheduleControlFailed: rendered.proactiveScheduleControlFailed === true
+            };
+            if (rendered.role === "aliya") {
+                // 已有消息切换分段设置时要立即全部重排，不播放逐段延迟。
+                renderAliyaMessage(rendered.content, rendered.images, true, messageMeta);
+            } else {
+                appendMessage(rendered.role, rendered.content, rendered.timestamp, rendered.images, rendered.id, messageMeta);
+            }
+            var nextRendered = items[renderedIndex + 1];
+            if (nextRendered && shouldRenderTimelineDateDivider(rendered.timestamp, nextRendered.timestamp)) {
+                appendTimelineDateDivider(rendered.timestamp, nextRendered.timestamp);
+            }
+        }
+        requestAnimationFrame(function() {
+            aliyaText.scrollTop = scrollToLatest ? aliyaText.scrollHeight : oldScrollTop;
+        });
+    }
+
+    function rerenderCurrentTimelineForSegmentSetting() {
+        if (!timelineRenderedItems.length || timelineRenderedSessionId !== currentSessionId) return;
+        renderPreparedTimelineMessages(timelineRenderedItems, false);
+    }
+
+    function rememberTimelineItem(role, content, images, id, timestamp, proactiveScheduleActionTypes, proactiveScheduleControlFailed) {
+        if (timelineRenderedSessionId !== currentSessionId) {
+            timelineRenderedItems = [];
+            timelineRenderedSessionId = currentSessionId;
+        }
+        timelineRenderedItems.push({
+            role: role,
+            content: content || "",
+            images: images || [],
+            id: id || null,
+            timestamp: timestamp || null,
+            proactiveScheduleActionTypes: proactiveScheduleActionTypes || [],
+            proactiveScheduleControlFailed: proactiveScheduleControlFailed === true
+        });
+    }
+
+    async function applyTimelineSnapshot(data, scrollToLatest) {
+        var renderedMessages = [];
+        var hrProcessed = false;
+
+        // MSK 返回最新→最旧，倒序渲染为页面所需的最旧→最新。
+        for (var i = data.length - 1; i >= 0; i--) {
+            var msg = data[i];
+            var role = msg.role === "user" ? "player" : "aliya";
+            var cleanContent = msg.content || "";
+            var images = timelineAttachmentImageUrls(msg.file);
+            if (role === "aliya") {
+                var processed = await processDrawingInstruction(cleanContent, msg.id);
+                cleanContent = processed.text;
+                images = images.concat(processed.images);
+                var hrResult = processHeartRateInstruction(cleanContent);
+                cleanContent = hrResult.text;
+                if (!hrProcessed) {
+                    if (!hrResult.matched) {
+                        currentRange = ranges.medium;
+                        updateDisplay();
+                    }
+                    hrProcessed = true;
+                }
+            }
+            renderedMessages.push({
+                role: role,
+                content: cleanContent,
+                images: images,
+                id: msg.id,
+                timestamp: msg.createdAt || null,
+                proactiveScheduleActionTypes: msg.proactiveScheduleActionTypes || [],
+                proactiveScheduleControlFailed: msg.proactiveScheduleControlFailed === true
+            });
+        }
+
+        earliestMsgId = null;
+        noMoreHistory = data.length < 30;
+        timelineRenderedItems = renderedMessages.slice();
+        timelineRenderedSessionId = currentSessionId;
+        renderPreparedTimelineMessages(timelineRenderedItems, scrollToLatest);
+        if (data.length > 0) {
+            earliestMsgId = data[data.length - 1].id;
+        }
+        timelineSnapshotMessageIds = {};
+        data.forEach(function(msg) {
+            if (msg && msg.id) timelineSnapshotMessageIds[msg.id] = true;
+        });
+        timelineSnapshotSignature = buildTimelineSnapshotSignature(data);
+    }
+
     // 初始化拉取消息（通过 timeline 端点，type=new）
     async function fetchInitialMessages() {
         if (timelineLoadPromise) return timelineLoadPromise;
@@ -1207,54 +1530,13 @@ document.addEventListener("DOMContentLoaded", function (event) {
                 var res = await fetch(API_BASE + "/api/conversation", {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
-                    body: makeBody({ action: "timeline", type: "new" })
+                    body: makeBody({ action: "timeline", type: "new", session_id: currentSessionId })
                 });
                 var data = await res.json();
                 if (await guardAuthResponse(res, data)) return;
                 if (Array.isArray(data)) {
-                    // 先在内存中完成图片指令解析，再一次性替换 DOM，避免处理期间聊天区变成空白。
-                    var renderedMessages = [];
-                    var hrProcessed = false;
-                    // 后端返回最新→最旧（Misskey timeline 默认降序），逆序渲染为正序
-                    for (var i = data.length - 1; i >= 0; i--) {
-                        var msg = data[i];
-                        var role = msg.role === "user" ? "player" : "aliya";
-                        var cleanContent = msg.content;
-                        var images = [];
-                        if (role === "aliya") {
-                            var processed = await processDrawingInstruction(msg.content, msg.id);
-                            cleanContent = processed.text;
-                            images = processed.images;
-                            var hrResult = processHeartRateInstruction(cleanContent);
-                            cleanContent = hrResult.text;
-                            // 只在最新一条 aliya 消息时决定是否恢复默认心率
-                            if (!hrProcessed) {
-                                if (!hrResult.matched) {
-                                    currentRange = ranges.medium;
-                                    updateDisplay();
-                                }
-                                hrProcessed = true;
-                            }
-                        }
-                        renderedMessages.push({ role: role, content: cleanContent, images: images, id: msg.id });
-                    }
-                    aliyaText.innerHTML = "";
-                    earliestMsgId = null;
-                    noMoreHistory = data.length < 30;
-                    for (var renderedIndex = 0; renderedIndex < renderedMessages.length; renderedIndex++) {
-                        var rendered = renderedMessages[renderedIndex];
-                        if (rendered.role === "aliya") {
-                            renderAliyaMessage(rendered.content, rendered.images, true);
-                        } else {
-                            appendMessage(rendered.role, rendered.content, null, rendered.images, rendered.id);
-                        }
-                    }
-                    // 记录最老一条消息的 id，供下拉加载使用
-                    if (data.length > 0) {
-                        // data[0] 是最新，data[length-1] 是最旧
-                        earliestMsgId = data[data.length - 1].id;
-                    }
-                    requestAnimationFrame(() => { aliyaText.scrollTop = aliyaText.scrollHeight; });
+                    // 先在内存完成富文本与图片解析，再原子替换，避免聊天区短暂消失。
+                    await applyTimelineSnapshot(data, true);
                 } else if (data && data.error) {
                     failed = true;
                     throw new Error(data.error);
@@ -1287,7 +1569,7 @@ document.addEventListener("DOMContentLoaded", function (event) {
             var res = await fetch(API_BASE + "/api/conversation", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: makeBody({ action: "timeline", type: "old", last_id: earliestMsgId })
+                body: makeBody({ action: "timeline", type: "old", last_id: earliestMsgId, session_id: currentSessionId })
             });
             var data = await res.json();
             if (await guardAuthResponse(res, data)) return;
@@ -1320,37 +1602,45 @@ document.addEventListener("DOMContentLoaded", function (event) {
         }
     }
 
-    // 将历史消息插入到列表顶部
+    // 将历史消息合并进完整时间线后统一重渲染，确保日期分隔和消息元信息连续。
     async function prependMessages(messages) {
-        // messages 是降序（最新→最旧），从新到旧逐条插到 firstChild 之前
-        // 最终 DOM 顺序：最旧（最前）→ 最新（最后）
+        // messages 是降序（最新→最旧），通过 unshift 整理为最旧→最新。
+        var preparedMessages = [];
         for (var i = 0; i < messages.length; i++) {
             var msg = messages[i];
             var role = msg.role === "user" ? "player" : "aliya";
             var cleanContent = msg.content;
-            var images = [];
+            var images = timelineAttachmentImageUrls(msg.file);
             if (role === "aliya") {
                 var processed = await processDrawingInstruction(msg.content, msg.id);
                 cleanContent = processed.text;
-                images = processed.images;
+                images = images.concat(processed.images);
                 var hrResult = processHeartRateInstruction(cleanContent);
                 cleanContent = hrResult.text;
-                if (segConfig.enabled && cleanContent) {
-                    var segments = splitAssistantMessageIntoSegments(cleanContent);
-                    // 分段后逆序插入（insertMessageAtTop 每次插到最前，逆序保证最终正序）
-                    for (var j = segments.length - 1; j >= 0; j--) {
-                        insertMessageAtTop("aliya", segments[j], null);
-                    }
-                    if (images && images.length > 0) {
-                        for (var k = images.length - 1; k >= 0; k--) {
-                            insertMessageAtTop("aliya", null, [images[k]]);
-                        }
-                    }
-                    continue;
-                }
+                preparedMessages.unshift({
+                    role: role,
+                    content: cleanContent,
+                    images: images,
+                    id: msg.id,
+                    timestamp: msg.createdAt || null,
+                    proactiveScheduleActionTypes: msg.proactiveScheduleActionTypes || [],
+                    proactiveScheduleControlFailed: msg.proactiveScheduleControlFailed === true
+                });
+            } else {
+                preparedMessages.unshift({
+                    role: role,
+                    content: cleanContent || "",
+                    images: images,
+                    id: msg.id,
+                    timestamp: msg.createdAt || null,
+                    proactiveScheduleActionTypes: msg.proactiveScheduleActionTypes || [],
+                    proactiveScheduleControlFailed: msg.proactiveScheduleControlFailed === true
+                });
             }
-            insertMessageAtTop(role, cleanContent, images);
         }
+        timelineRenderedItems = preparedMessages.concat(timelineRenderedItems);
+        timelineRenderedSessionId = currentSessionId;
+        renderPreparedTimelineMessages(timelineRenderedItems, false);
     }
 
     function insertMessageAtTop(role, content, images) {
@@ -1395,10 +1685,25 @@ document.addEventListener("DOMContentLoaded", function (event) {
             var res = await fetch(API_BASE + "/api/poll", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: makeBody({ since: lastMsgId })
+                body: makeBody({ since: lastMsgId, session_id: currentSessionId })
             });
             var data = await res.json();
             if (await guardAuthResponse(res, data)) return;
+            if (data.snapshot === true && Array.isArray(data.messages)) {
+                // 会话切换期间可能有旧请求返回，不能用旧会话覆盖当前聊天区。
+                if (data.session_id && data.session_id !== currentSessionId) return;
+                var snapshotSignature = buildTimelineSnapshotSignature(data.messages);
+                if (snapshotSignature !== timelineSnapshotSignature) {
+                    var hasNewAssistant = data.messages.some(function(msg) {
+                        return msg && msg.role === "assistant" && msg.id && !timelineSnapshotMessageIds[msg.id];
+                    });
+                    await applyTimelineSnapshot(data.messages, isAtBottomFlag);
+                    recentlySentSet = {};
+                    recentlyReceivedSet = {};
+                    if (hasNewAssistant && isWaitingReply) setWaiting(false);
+                }
+                return;
+            }
             if (data.messages && data.messages.length > 0) {
                 for (var i = 0; i < data.messages.length; i++) {
                     var msg = data.messages[i];
@@ -1420,9 +1725,13 @@ document.addEventListener("DOMContentLoaded", function (event) {
                             currentRange = ranges.medium;
                             updateDisplay();
                         }
-                        renderAliyaMessage(hrResult.text, processed.images);
+                        renderAliyaMessage(hrResult.text, timelineAttachmentImageUrls(msg.file).concat(processed.images), false, {
+                            timestamp: msg.createdAt || msg.timestamp || null,
+                            proactiveScheduleActionTypes: msg.proactiveScheduleActionTypes || msg.proactive_schedule_action_types || [],
+                            proactiveScheduleControlFailed: msg.proactiveScheduleControlFailed === true || msg.proactive_schedule_control_failed === true
+                        });
                     } else {
-                        appendMessage(msg.role, msg.content, msg.timestamp);
+                        appendMessage(msg.role, msg.content, msg.createdAt || msg.timestamp || null, timelineAttachmentImageUrls(msg.file));
                     }
                     
                     if (msg.id > lastMsgId) lastMsgId = msg.id;
@@ -1453,14 +1762,23 @@ document.addEventListener("DOMContentLoaded", function (event) {
         var content = playerInput.value.trim();
         var file = imageInput && imageInput.files && imageInput.files[0];
         if (!content && !file) return;
-        var displayContent = content || "[图片消息]";
-        appendMessage("player", displayContent);
+        // 纯图片消息只显示媒体卡片，和 MSK 原生聊天保持一致。
+        var displayContent = content;
+        var playerTimestamp = new Date().toISOString();
+        var localPreviewImages = file ? [URL.createObjectURL(file)] : [];
+        appendLiveTimelineDateDivider(playerTimestamp);
+        appendMessage("player", displayContent, playerTimestamp, localPreviewImages);
+        rememberTimelineItem("player", displayContent, localPreviewImages, null, playerTimestamp);
         playerInput.value = "";
-        if (imageInput) imageInput.value = "";
+        if (imageInput) {
+            imageInput.value = "";
+            syncMediaUploadState();
+        }
         setWaiting(true, file ? "正在上传图片..." : "正在发送...");
         recentlySentSet[displayContent] = true;
         setTimeout(function () { delete recentlySentSet[displayContent]; }, 8000);
         try {
+            await opWaitForPendingConfigSaves();
             var fileId = file ? await uploadSelectedImage(file) : null;
             setWaiting(true, "正在等待 Aliya 回复...");
             var controller = new AbortController();
@@ -1483,17 +1801,40 @@ document.addEventListener("DOMContentLoaded", function (event) {
                     currentRange = ranges.medium;
                     updateDisplay();
                 }
-                renderAliyaMessage(hrResult.text, processed.images);
+                var assistantTimestamp = new Date().toISOString();
+                var assistantMeta = {
+                    timestamp: assistantTimestamp,
+                    proactiveScheduleActionTypes: data.proactive_schedule_action_types || [],
+                    proactiveScheduleControlFailed: data.proactive_schedule_control_failed === true
+                };
+                appendLiveTimelineDateDivider(assistantTimestamp);
+                rememberTimelineItem(
+                    "aliya",
+                    hrResult.text,
+                    processed.images,
+                    msgId,
+                    assistantTimestamp,
+                    assistantMeta.proactiveScheduleActionTypes,
+                    assistantMeta.proactiveScheduleControlFailed
+                );
+                renderAliyaMessage(hrResult.text, processed.images, false, assistantMeta);
                 setWaiting(false);
                 recentlyReceivedSet[processed.text] = true;
                 setTimeout(function () { delete recentlyReceivedSet[processed.text]; }, 10000);
             } else if (data.status === "error") {
-                appendMessage("aliya", data.reply || data.error || "通信故障，请稍后再试");
+                var errorReply = data.reply || data.error || "通信故障，请稍后再试";
+                var errorTimestamp = new Date().toISOString();
+                appendLiveTimelineDateDivider(errorTimestamp);
+                rememberTimelineItem("aliya", errorReply, [], null, errorTimestamp);
+                appendMessage("aliya", errorReply, errorTimestamp);
                 setWaiting(false);
             }
         } catch (err) {
             console.log("发送消息失败：", err);
-            appendMessage("aliya", "通信故障，请稍后再试");
+            var failureTimestamp = new Date().toISOString();
+            appendLiveTimelineDateDivider(failureTimestamp);
+            rememberTimelineItem("aliya", "通信故障，请稍后再试", [], null, failureTimestamp);
+            appendMessage("aliya", "通信故障，请稍后再试", failureTimestamp);
             setWaiting(false);
         }
     }
@@ -1564,13 +1905,14 @@ document.addEventListener("DOMContentLoaded", function (event) {
 
     // ==================== Operation 面板 ====================
     var opOverlay = document.getElementById("opOverlay");
+    var opPanel = document.getElementById("opPanel");
+    var opInitialLoading = document.getElementById("opInitialLoading");
     var opCloseBtn = document.getElementById("opCloseBtn");
     var operationBtn = document.getElementById("operationBtn");
     var opSubnav = document.getElementById("opSubnav");
     var opSegToggle = document.getElementById("opSegToggle");
     var opSessionList = document.getElementById("opSessionList");
     var opCreateBtn = document.getElementById("opCreateBtn");
-    var opUpdateBtn = document.getElementById("opUpdateBtn");
     var opStatus = document.getElementById("opStatus");
     var opTimeAwarenessToggle = document.getElementById("opTimeAwarenessToggle");
     var opRandomProactiveToggle = document.getElementById("opRandomProactiveToggle");
@@ -1582,8 +1924,6 @@ document.addEventListener("DOMContentLoaded", function (event) {
     var opMemorySettingsLink = document.getElementById("opMemorySettingsLink");
     var opSessionRenameBtn = document.getElementById("opSessionRenameBtn");
     var opSessionDeleteBtn = document.getElementById("opSessionDeleteBtn");
-    var opUpdateBtnLabel = document.querySelector("#opUpdateBtn .op-btn-label");
-
     var opSessions = [];
     var opCurrentSessionId = null;
     var opAgentModels = [];
@@ -1591,6 +1931,8 @@ document.addEventListener("DOMContentLoaded", function (event) {
     var opAgentCreditBalance = null;
     var opImageModels = [];
     var opArtistPresets = [];
+    var opVisionModels = [];
+    var opVisionDefaultModelId = "";
     var opModelSuccessRates = {};
     var opCurrentPage = "session";
     var opRandomProactiveEnabled = false;
@@ -1599,8 +1941,21 @@ document.addEventListener("DOMContentLoaded", function (event) {
     var opProactiveSchedulesLoading = false;
     var opProactiveScheduleMutating = null;
     var opPanelLoadPromise = null;
-    var opUpdateInFlight = false;
-    var opSegmentSaving = false;
+    var opConfigSaveTimer = null;
+    var opConfigSaveInFlight = false;
+    var opConfigSavePromise = null;
+    var opConfigPendingPatch = {};
+    var opConfigPendingSessionId = null;
+    var opConfigFieldRevisions = {};
+    var opConfigRevision = 0;
+    var opConfigLoadRevision = 0;
+    var opConfigLoadedSessionId = null;
+    var opConfirmedConfig = {};
+    var opDesiredConfig = {};
+    var opConfirmedSessionId = null;
+    var opProactiveReloadAfterSave = false;
+    var opSessionSwitchQueued = null;
+    var opSessionSwitchPromise = null;
     var opSessionActionBusy = false;
     var opFallbackImageModels = [{
         id: "aob0wkxmi3",
@@ -1625,13 +1980,14 @@ document.addEventListener("DOMContentLoaded", function (event) {
         opStatus.className = "op-status" + (type ? " " + type : "");
     }
 
-    function opSetUpdateBusy(busy) {
-        opUpdateInFlight = busy === true;
-        if (!opUpdateBtn) return;
-        opUpdateBtn.disabled = opUpdateInFlight;
-        opUpdateBtn.classList.toggle("is-loading", opUpdateInFlight);
-        opUpdateBtn.setAttribute("aria-busy", opUpdateInFlight ? "true" : "false");
-        if (opUpdateBtnLabel) opUpdateBtnLabel.textContent = opUpdateInFlight ? "保存中..." : "保存";
+    function opSetInitialLoading(loading, message) {
+        if (opPanel) opPanel.classList.toggle("is-initial-loading", loading === true);
+        if (opInitialLoading) {
+            opInitialLoading.setAttribute("aria-busy", loading === true && !message ? "true" : "false");
+            opInitialLoading.classList.toggle("error", !!message);
+            var copy = opInitialLoading.querySelector("span:last-child");
+            if (copy) copy.textContent = message || "正在读取当前会话设置...";
+        }
     }
 
     function opSyncProactiveNotice() {
@@ -1639,6 +1995,8 @@ document.addEventListener("DOMContentLoaded", function (event) {
         var enabled = opTimeAwarenessToggle && opTimeAwarenessToggle.checked === true;
         opProactiveNotice.hidden = enabled;
         opProactiveNotice.textContent = enabled ? "" : "请先在“会话”页面开启时间感知，才能启用主动消息。";
+        if (opRandomProactiveToggle) opRandomProactiveToggle.disabled = !enabled;
+        if (opScheduledProactiveToggle) opScheduledProactiveToggle.disabled = !enabled;
     }
 
     function opFormatProactiveDate(value) {
@@ -1765,28 +2123,22 @@ document.addEventListener("DOMContentLoaded", function (event) {
         }
     }
 
-    async function opSaveProactiveSetting(kind, enabled) {
+    function opSaveProactiveSetting(kind, enabled) {
         if (!opTimeAwarenessToggle || !opTimeAwarenessToggle.checked) {
             if (kind === "random" && opRandomProactiveToggle) opRandomProactiveToggle.checked = opRandomProactiveEnabled;
             if (kind === "scheduled" && opScheduledProactiveToggle) opScheduledProactiveToggle.checked = opScheduledProactiveEnabled;
             opShowStatus("请先开启时间感知", "error");
             return;
         }
-        var previous = kind === "random" ? opRandomProactiveEnabled : opScheduledProactiveEnabled;
-        var payload = { action: "update" };
-        payload[kind === "random" ? "random_proactive_enabled" : "scheduled_proactive_enabled"] = enabled;
-        try {
-            await opPostConversation(payload);
-            if (kind === "random") opRandomProactiveEnabled = enabled;
-            else opScheduledProactiveEnabled = enabled;
-            opShowStatus("主动消息设置已保存", "success");
-            if (kind === "scheduled" && enabled) await opLoadProactiveSchedules();
-            else opRenderProactiveSchedules();
-        } catch (err) {
-            if (kind === "random" && opRandomProactiveToggle) opRandomProactiveToggle.checked = previous;
-            if (kind === "scheduled" && opScheduledProactiveToggle) opScheduledProactiveToggle.checked = previous;
-            opShowStatus("主动消息设置失败：" + err.message, "error");
-        }
+        var key = kind === "random" ? "random_proactive_enabled" : "scheduled_proactive_enabled";
+        if (kind === "random") opRandomProactiveEnabled = enabled;
+        else opScheduledProactiveEnabled = enabled;
+        if (opTimeAwarenessToggle) opTimeAwarenessToggle.disabled = opRandomProactiveEnabled || opScheduledProactiveEnabled;
+        if (kind === "scheduled" && enabled) opProactiveReloadAfterSave = true;
+        opRenderProactiveSchedules();
+        var patch = {};
+        patch[key] = enabled;
+        opQueueConfigPatch(patch);
     }
 
     async function opToggleProactiveSchedule(schedule) {
@@ -1795,6 +2147,7 @@ document.addEventListener("DOMContentLoaded", function (event) {
         opProactiveScheduleMutating = schedule.id;
         opRenderProactiveSchedules();
         try {
+            await opWaitForPendingConfigSaves();
             var result = await opPostConversation({ action: "set_proactive_status", session_id: opCurrentSessionId, schedule_id: schedule.id, status: status });
             if (result && result.status === "completed") opShowStatus("一次性计划已完成，无法恢复", "error");
             await opLoadProactiveSchedules();
@@ -1811,6 +2164,7 @@ document.addEventListener("DOMContentLoaded", function (event) {
         opProactiveScheduleMutating = schedule.id;
         opRenderProactiveSchedules();
         try {
+            await opWaitForPendingConfigSaves();
             await opPostConversation({ action: "delete_proactive_schedule", session_id: opCurrentSessionId, schedule_id: schedule.id });
             await opLoadProactiveSchedules();
             opShowStatus("定时计划已删除", "success");
@@ -1836,7 +2190,6 @@ document.addEventListener("DOMContentLoaded", function (event) {
                 btn.classList.toggle("active", btn.getAttribute("data-op-target") === opCurrentPage);
             });
         }
-        if (opUpdateBtn) opUpdateBtn.style.display = opCurrentPage === "proactive" ? "none" : "";
         if (opCurrentPage === "memory") opSyncMemorySettingsLink();
         if (opCurrentPage === "proactive") {
             opSyncProactiveNotice();
@@ -1974,8 +2327,8 @@ document.addEventListener("DOMContentLoaded", function (event) {
 
     function opRenderAgentModelLoading() {
         var group = document.getElementById("cfgAgentModel");
-        if (group && opAgentModels.length > 0) group.classList.add("is-loading");
-        else if (group) group.innerHTML = '<div class="op-image-loading"><span class="op-loading-spinner"></span><span>正在加载对话模型...</span></div>';
+        if (group && opAgentModels.length > 0) return;
+        if (group) group.innerHTML = '<div class="op-image-loading"><span class="op-loading-spinner"></span><span>正在加载对话模型...</span></div>';
         var currentEl = document.getElementById("opAgentModelCurrent");
         if (currentEl) currentEl.textContent = "...";
     }
@@ -2016,6 +2369,13 @@ document.addEventListener("DOMContentLoaded", function (event) {
             head.appendChild(action);
             card.appendChild(head);
 
+            if (model.description) {
+                var description = document.createElement("p");
+                description.className = "op-model-description";
+                description.textContent = model.description;
+                card.appendChild(description);
+            }
+
             var chips = document.createElement("div");
             chips.className = "op-model-meta";
             var rate = opSuccessRateInfo(value);
@@ -2034,10 +2394,10 @@ document.addEventListener("DOMContentLoaded", function (event) {
     function opRenderImageLoading() {
         var modelGroup = document.getElementById("cfgAgentImageModel");
         var presetGroup = document.getElementById("cfgImgArtistPresetId");
-        if (modelGroup && opImageModels.length > 0) modelGroup.classList.add("is-loading");
-        else if (modelGroup) modelGroup.innerHTML = '<div class="op-image-loading"><span class="op-loading-spinner"></span><span>正在加载模型...</span></div>';
-        if (presetGroup && (opArtistPresets.length > 0 || presetGroup.querySelector(".op-artist-card"))) presetGroup.classList.add("is-loading");
-        else if (presetGroup) presetGroup.innerHTML = '<div class="op-image-loading"><span class="op-loading-spinner"></span><span>正在加载画师串...</span></div>';
+        if (modelGroup && opImageModels.length === 0) modelGroup.innerHTML = '<div class="op-image-loading"><span class="op-loading-spinner"></span><span>正在加载模型...</span></div>';
+        if (presetGroup && opArtistPresets.length === 0 && !presetGroup.querySelector(".op-artist-card")) {
+            presetGroup.innerHTML = '<div class="op-image-loading"><span class="op-loading-spinner"></span><span>正在加载画师串...</span></div>';
+        }
     }
 
     function opRenderImageModels(selectedId) {
@@ -2092,6 +2452,51 @@ document.addEventListener("DOMContentLoaded", function (event) {
         var models = opImageModels.length > 0 ? opImageModels : opFallbackImageModels;
         models.forEach(appendModelCard);
         opSetChoiceValue("cfgAgentImageModel", selectedId || "", "");
+    }
+
+    function opRenderVisionModelLoading() {
+        var group = document.getElementById("opVisionModelGroup");
+        var select = document.getElementById("cfgAgentVisionModel");
+        var cost = document.getElementById("opVisionModelCost");
+        if (group) group.hidden = false;
+        if (select) {
+            select.disabled = true;
+            select.innerHTML = "";
+            var option = document.createElement("option");
+            option.textContent = "正在加载识图模型...";
+            select.appendChild(option);
+        }
+        if (cost) cost.textContent = "用于理解你发送的图片 · 识图费用：-";
+    }
+
+    function opRenderVisionModels(selectedId) {
+        var group = document.getElementById("opVisionModelGroup");
+        var select = document.getElementById("cfgAgentVisionModel");
+        var cost = document.getElementById("opVisionModelCost");
+        if (!group || !select) return;
+        if (!opVisionModels.length) {
+            group.hidden = true;
+            select.disabled = true;
+            return;
+        }
+
+        var fallbackId = opVisionDefaultModelId || opVisionModels[0].id || "";
+        var resolvedId = selectedId || fallbackId;
+        if (!opVisionModels.some(function(model) { return model.id === resolvedId; })) resolvedId = fallbackId;
+
+        select.innerHTML = "";
+        opVisionModels.forEach(function(model) {
+            var option = document.createElement("option");
+            option.value = model.id || "";
+            option.textContent = model.name || model.id || "未命名模型";
+            select.appendChild(option);
+        });
+        select.value = resolvedId;
+        select.disabled = false;
+        group.hidden = false;
+
+        var activeModel = opVisionModels.find(function(model) { return model.id === resolvedId; });
+        if (cost) cost.textContent = "用于理解你发送的图片 · 识图费用：" + opFormatModelCost(activeModel && activeModel.costPerCall);
     }
 
     function opRenderArtistPresets(selectedId) {
@@ -2161,7 +2566,7 @@ document.addEventListener("DOMContentLoaded", function (event) {
         }
     }
 
-    async function opLoadAgentModelOptions() {
+    async function opLoadAgentModelOptions(shouldRender) {
         opRenderAgentModelLoading();
         var results = await Promise.allSettled([
             opFetchConversationAction("agent_models"),
@@ -2184,10 +2589,10 @@ document.addEventListener("DOMContentLoaded", function (event) {
             console.log("加载智能体余额失败：", results[1].reason);
             opAgentCreditBalance = null;
         }
-        opRenderAgentModels(opGetChoiceValue("cfgAgentModel", opResolvedAgentDefaultModelId()));
+        if (shouldRender !== false) opRenderAgentModels(opGetChoiceValue("cfgAgentModel", opResolvedAgentDefaultModelId()));
     }
 
-    async function opLoadImageOptions() {
+    async function opLoadImageOptions(shouldRender) {
         opRenderImageLoading();
         var results = await Promise.allSettled([
             opFetchConversationAction("image_models"),
@@ -2205,36 +2610,34 @@ document.addEventListener("DOMContentLoaded", function (event) {
             console.log("加载画师串失败：", results[1].reason);
             opArtistPresets = opFallbackArtistPresets.slice();
         }
-        opRenderImageModels(opGetChoiceValue("cfgAgentImageModel", ""));
-        opRenderArtistPresets(opGetChoiceValue("cfgImgArtistPresetId", "default-anime"));
+        if (shouldRender !== false) {
+            opRenderImageModels(opGetChoiceValue("cfgAgentImageModel", ""));
+            opRenderArtistPresets(opGetChoiceValue("cfgImgArtistPresetId", "default-anime"));
+        }
     }
 
-    async function opSaveSegmentedOutput(enabled) {
-        if (opSegmentSaving) return;
-        var previous = segConfig.enabled === true;
-        segConfig.enabled = enabled === true;
+    async function opLoadVisionModelOptions(shouldRender) {
+        if (!opVisionModels.length) opRenderVisionModelLoading();
+        try {
+            var data = await opFetchConversationAction("vision_models");
+            opVisionModels = data && Array.isArray(data.models) ? data.models : [];
+            opVisionDefaultModelId = data && typeof data.defaultModelId === "string" ? data.defaultModelId : "";
+        } catch (err) {
+            console.log("加载识图模型失败：", err);
+            opVisionModels = [];
+            opVisionDefaultModelId = "";
+        }
+        if (shouldRender !== false) opRenderVisionModels(opDesiredConfig.agent_vision_model_id || "");
+    }
+
+    function opSaveSegmentedOutput(enabled) {
+        enabled = enabled === true;
+        if (segConfig.enabled === enabled) return;
+        segConfig.enabled = enabled;
         saveSegConfig();
         opSyncSegmentToggle();
-        opSegmentSaving = true;
-        if (opSegToggle) opSegToggle.disabled = true;
-        try {
-            var data = await opPostConversation({ action: "update_segmented", enabled: segConfig.enabled });
-            var saved = data && data.data && typeof data.data.segmentedOutputEnabled === "boolean"
-                ? data.data.segmentedOutputEnabled
-                : segConfig.enabled;
-            segConfig.enabled = saved;
-            saveSegConfig();
-            opSyncSegmentToggle();
-            opShowStatus("分段输出设置已保存", "success");
-        } catch (err) {
-            segConfig.enabled = previous;
-            saveSegConfig();
-            opSyncSegmentToggle();
-            opShowStatus("分段输出保存失败：" + err.message, "error");
-        } finally {
-            opSegmentSaving = false;
-            if (opSegToggle) opSegToggle.disabled = false;
-        }
+        rerenderCurrentTimelineForSegmentSetting();
+        opQueueConfigPatch({ segmented_output_enabled: enabled });
     }
 
     function opGetChoiceValue(groupId, fallbackValue) {
@@ -2280,8 +2683,21 @@ document.addEventListener("DOMContentLoaded", function (event) {
             var clickTarget = event.target.nodeType === 3 ? event.target.parentElement : event.target;
             var target = clickTarget.closest("[data-value]");
             if (!target || !group.contains(target)) return;
-            opSetChoiceValue(groupId, target.getAttribute("data-value"));
+            var nextValue = target.getAttribute("data-value");
+            if (opGetChoiceValue(groupId, "") === nextValue) return;
+            opSetChoiceValue(groupId, nextValue);
             if (groupId === "cfgAgentModel") opUpdateAgentModelHero();
+            if (groupId === "cfgAgentModel") {
+                var defaultAgentModelId = opResolvedAgentDefaultModelId();
+                opQueueConfigPatch({ agent_model_id: nextValue === defaultAgentModelId ? "" : nextValue });
+            } else if (groupId === "cfgAgentImageModel") {
+                opQueueConfigPatch({ agent_image_model_id: nextValue });
+            } else if (groupId === "cfgImgSize" || groupId === "cfgImgArtistPresetId") {
+                opQueueConfigPatch({
+                    img_size: opGetChoiceValue("cfgImgSize", "landscape"),
+                    img_artist_preset_id: opGetChoiceValue("cfgImgArtistPresetId", "default-anime")
+                });
+            }
         });
         opSetChoiceValue(groupId, opGetChoiceValue(groupId));
     }
@@ -2291,14 +2707,26 @@ document.addEventListener("DOMContentLoaded", function (event) {
     opBindChoiceGroup("cfgImgSize");
     opBindChoiceGroup("cfgImgArtistPresetId");
 
-    function opCollectConfig() {
+    var opVisionModelSelect = document.getElementById("cfgAgentVisionModel");
+    if (opVisionModelSelect) {
+        opVisionModelSelect.addEventListener("change", function() {
+            var nextValue = opVisionModelSelect.value || "";
+            if (!nextValue || opDesiredConfig.agent_vision_model_id === nextValue) return;
+            opQueueConfigPatch({ agent_vision_model_id: nextValue });
+            opRenderVisionModels(nextValue);
+        });
+    }
+
+    function opCollectConfigPatch() {
         var config = {
-            action: "update",
             img_size: opGetChoiceValue("cfgImgSize", "landscape"),
             img_artist_preset_id: opGetChoiceValue("cfgImgArtistPresetId", "default-anime"),
             agent_image_model_id: opGetChoiceValue("cfgAgentImageModel", "aob0wkxmi3"),
+            agent_vision_model_id: (document.getElementById("cfgAgentVisionModel") || {}).value || "",
             segmented_output_enabled: segConfig.enabled === true,
-            time_awareness_enabled: opTimeAwarenessToggle?.checked === true
+            time_awareness_enabled: opTimeAwarenessToggle?.checked === true,
+            random_proactive_enabled: opRandomProactiveEnabled === true,
+            scheduled_proactive_enabled: opScheduledProactiveEnabled === true
         };
         if (opAgentModels.length > 0) {
             var defaultAgentModelId = opResolvedAgentDefaultModelId();
@@ -2308,9 +2736,213 @@ document.addEventListener("DOMContentLoaded", function (event) {
         return config;
     }
 
+    function opHasOwn(obj, key) {
+        return Object.prototype.hasOwnProperty.call(obj, key);
+    }
+
+    function opApplyConfigPatchToControls(patch) {
+        if (!patch) return;
+        if (opHasOwn(patch, "agent_model_id")) {
+            opSetChoiceValue("cfgAgentModel", opDisplayAgentModelId(patch.agent_model_id), opResolvedAgentDefaultModelId());
+            opUpdateAgentModelHero();
+        }
+        if (opHasOwn(patch, "agent_image_model_id")) {
+            opSetChoiceValue("cfgAgentImageModel", patch.agent_image_model_id || "", "");
+        }
+        if (opHasOwn(patch, "agent_vision_model_id")) {
+            opRenderVisionModels(patch.agent_vision_model_id || "");
+        }
+        if (opHasOwn(patch, "img_size")) {
+            opSetChoiceValue("cfgImgSize", patch.img_size || "landscape", "landscape");
+        }
+        if (opHasOwn(patch, "img_artist_preset_id")) {
+            opSetChoiceValue("cfgImgArtistPresetId", patch.img_artist_preset_id || "default-anime", "default-anime");
+        }
+        if (opHasOwn(patch, "segmented_output_enabled")) {
+            var previousSegmented = segConfig.enabled === true;
+            segConfig.enabled = patch.segmented_output_enabled === true;
+            saveSegConfig();
+            opSyncSegmentToggle();
+            if (previousSegmented !== segConfig.enabled) rerenderCurrentTimelineForSegmentSetting();
+        }
+        if (opHasOwn(patch, "time_awareness_enabled") && opTimeAwarenessToggle) {
+            opTimeAwarenessToggle.checked = patch.time_awareness_enabled === true;
+        }
+        if (opHasOwn(patch, "random_proactive_enabled")) {
+            opRandomProactiveEnabled = patch.random_proactive_enabled === true;
+            if (opRandomProactiveToggle) opRandomProactiveToggle.checked = opRandomProactiveEnabled;
+        }
+        if (opHasOwn(patch, "scheduled_proactive_enabled")) {
+            opScheduledProactiveEnabled = patch.scheduled_proactive_enabled === true;
+            if (opScheduledProactiveToggle) opScheduledProactiveToggle.checked = opScheduledProactiveEnabled;
+        }
+        if (opTimeAwarenessToggle) opTimeAwarenessToggle.disabled = opRandomProactiveEnabled || opScheduledProactiveEnabled;
+        opSyncProactiveNotice();
+        opRenderProactiveSchedules();
+    }
+
+    function opConfigPatchFromServer(data) {
+        var imgSettings = data && data.agentImageSettings || {};
+        return {
+            agent_model_id: data && data.agentModelId || "",
+            agent_image_model_id: data && data.agentImageModelId || "",
+            agent_vision_model_id: data && data.agentVisionModelId || "",
+            img_size: imgSettings.size || "landscape",
+            img_artist_preset_id: imgSettings.artistPresetId || "default-anime",
+            segmented_output_enabled: !!(data && data.segmentedOutputEnabled === true),
+            time_awareness_enabled: !(data && data.timeAwarenessEnabled === false),
+            random_proactive_enabled: !!(data && data.randomProactiveEnabled === true),
+            scheduled_proactive_enabled: !!(data && data.scheduledProactiveEnabled === true)
+        };
+    }
+
+    function opAdoptServerConfig(data, revisionSnapshot) {
+        if (!data) return;
+        var sessionId = data.id || opCurrentSessionId || currentSessionId;
+        if (sessionId && opConfirmedSessionId !== sessionId) {
+            opConfirmedSessionId = sessionId;
+            opConfirmedConfig = {};
+            opDesiredConfig = {};
+            opConfigFieldRevisions = {};
+        }
+        opCurrentSessionId = sessionId || null;
+        currentSessionId = opCurrentSessionId;
+        var serverPatch = opConfigPatchFromServer(data);
+        var safePatch = {};
+        Object.keys(serverPatch).forEach(function(key) {
+            var startedAt = revisionSnapshot && opHasOwn(revisionSnapshot, key) ? revisionSnapshot[key] : 0;
+            var currentRevision = opConfigFieldRevisions[key] || 0;
+            if (currentRevision !== startedAt) return;
+            opConfirmedConfig[key] = serverPatch[key];
+            opDesiredConfig[key] = serverPatch[key];
+            safePatch[key] = serverPatch[key];
+        });
+        opApplyConfigPatchToControls(safePatch);
+        opConfigLoadedSessionId = opCurrentSessionId;
+        opSyncMemorySettingsLink();
+        if (opProactiveLastError) {
+            var errorLines = [];
+            if (data.randomProactiveLastError) errorLines.push("上次随机主动消息执行失败，本次已跳过。");
+            if (data.scheduledProactiveLastError) errorLines.push("上次定时主动消息执行失败，本次已跳过。");
+            opProactiveLastError.hidden = errorLines.length === 0;
+            opProactiveLastError.textContent = errorLines.join(" ");
+        }
+    }
+
+    function opResetConfigStateForSession(sessionId) {
+        if (opConfigSaveTimer) clearTimeout(opConfigSaveTimer);
+        opConfigSaveTimer = null;
+        opConfigPendingPatch = {};
+        opConfigPendingSessionId = null;
+        opConfigFieldRevisions = {};
+        opConfigRevision = 0;
+        opConfigLoadedSessionId = null;
+        opConfirmedSessionId = sessionId || null;
+        opConfirmedConfig = {};
+        opDesiredConfig = {};
+        opConfigLoadRevision++;
+    }
+
+    function opQueueConfigPatch(patch) {
+        var sessionId = opCurrentSessionId || currentSessionId;
+        var keys = Object.keys(patch || {});
+        if (!keys.length) return;
+        if (!sessionId) {
+            var unavailableRollback = {};
+            keys.forEach(function(key) {
+                if (opHasOwn(opConfirmedConfig, key)) unavailableRollback[key] = opConfirmedConfig[key];
+            });
+            opApplyConfigPatchToControls(unavailableRollback);
+            opShowStatus("当前没有可更新的会话", "error");
+            return;
+        }
+        if (opConfigPendingSessionId && opConfigPendingSessionId !== sessionId) {
+            opShowStatus("会话正在切换，请稍候重试", "error");
+            return;
+        }
+        opConfigPendingSessionId = sessionId;
+        keys.forEach(function(key) {
+            var revision = ++opConfigRevision;
+            opConfigFieldRevisions[key] = revision;
+            opConfigPendingPatch[key] = patch[key];
+            opDesiredConfig[key] = patch[key];
+        });
+        opShowStatus("设置已生效，正在同步...");
+        if (opConfigSaveTimer) clearTimeout(opConfigSaveTimer);
+        opConfigSaveTimer = setTimeout(function() {
+            opConfigSaveTimer = null;
+            void opFlushConfigSave();
+        }, 140);
+    }
+
+    function opFlushConfigSave() {
+        if (opConfigSaveInFlight) return opConfigSavePromise || Promise.resolve();
+        var keys = Object.keys(opConfigPendingPatch);
+        if (!keys.length) return Promise.resolve();
+        if (opConfigSaveTimer) clearTimeout(opConfigSaveTimer);
+        opConfigSaveTimer = null;
+        var patch = opConfigPendingPatch;
+        var sessionId = opConfigPendingSessionId || opCurrentSessionId || currentSessionId;
+        var sentRevisions = {};
+        keys.forEach(function(key) { sentRevisions[key] = opConfigFieldRevisions[key] || 0; });
+        opConfigPendingPatch = {};
+        opConfigPendingSessionId = null;
+        opConfigSaveInFlight = true;
+
+        var task = (async function() {
+            try {
+                var payload = Object.assign({ action: "update", session_id: sessionId }, patch);
+                var result = await opPostConversation(payload);
+                if (!result) throw new Error("请求未完成");
+                keys.forEach(function(key) { opConfirmedConfig[key] = patch[key]; });
+                if (opHasOwn(patch, "scheduled_proactive_enabled") && patch.scheduled_proactive_enabled && opProactiveReloadAfterSave) {
+                    opProactiveReloadAfterSave = false;
+                    if (sessionId === (opCurrentSessionId || currentSessionId)) void opLoadProactiveSchedules();
+                }
+                if (sessionId === (opCurrentSessionId || currentSessionId) && Object.keys(opConfigPendingPatch).length === 0) {
+                    opShowStatus("设置已同步", "success");
+                }
+            } catch (err) {
+                var rollbackPatch = {};
+                keys.forEach(function(key) {
+                    if ((opConfigFieldRevisions[key] || 0) === sentRevisions[key] && opHasOwn(opConfirmedConfig, key)) {
+                        rollbackPatch[key] = opConfirmedConfig[key];
+                        opDesiredConfig[key] = opConfirmedConfig[key];
+                    }
+                });
+                if (sessionId === (opCurrentSessionId || currentSessionId)) {
+                    opApplyConfigPatchToControls(rollbackPatch);
+                    opShowStatus("设置同步失败：" + err.message, "error");
+                }
+            } finally {
+                opConfigSaveInFlight = false;
+                if (opConfigSavePromise === task) opConfigSavePromise = null;
+                if (Object.keys(opConfigPendingPatch).length > 0) void opFlushConfigSave();
+            }
+        })();
+        opConfigSavePromise = task;
+        return task;
+    }
+
+    async function opWaitForPendingConfigSaves() {
+        while (opConfigSaveTimer || opConfigSaveInFlight || Object.keys(opConfigPendingPatch).length > 0) {
+            if (opConfigSaveTimer) {
+                clearTimeout(opConfigSaveTimer);
+                opConfigSaveTimer = null;
+            }
+            if (!opConfigSaveInFlight && Object.keys(opConfigPendingPatch).length > 0) {
+                await opFlushConfigSave();
+            } else if (opConfigSavePromise) {
+                await opConfigSavePromise;
+            } else {
+                break;
+            }
+        }
+    }
+
     function opRenderSessionLoading() {
         if (opSessions.length > 0) {
-            opSessionList.classList.add("is-loading");
+            opSessionList.classList.remove("is-loading");
             return;
         }
         opSessionList.classList.remove("is-loading");
@@ -2319,6 +2951,54 @@ document.addEventListener("DOMContentLoaded", function (event) {
                 '<span class="op-session-loading-spinner"></span>' +
                 '<span>正在加载会话...</span>' +
             '</div>';
+    }
+
+    function opRequestSessionSwitch(session) {
+        if (!session || !session.id) return;
+        if (!opSessionSwitchPromise && !opSessionSwitchQueued && session.id === opCurrentSessionId) return;
+        opSessionSwitchQueued = session;
+        opShowStatus("正在切换到会话：" + (session.name || session.id) + "...");
+        if (opSessionSwitchPromise) return;
+
+        var task = (async function() {
+            var lastSuccessfulSession = null;
+            while (opSessionSwitchQueued) {
+                var targetSession = opSessionSwitchQueued;
+                opSessionSwitchQueued = null;
+                try {
+                    await opWaitForPendingConfigSaves();
+                    var data = await opPostConversation({ action: "switch_session", session_id: targetSession.id });
+                    if (!data || data.status !== "success") throw new Error(data && data.error || "切换会话失败");
+                    lastSuccessfulSession = targetSession;
+                    if (opSessionSwitchQueued) continue;
+
+                    opCurrentSessionId = targetSession.id;
+                    currentSessionId = targetSession.id;
+                    opResetConfigStateForSession(targetSession.id);
+                    loadSegConfig();
+                    opSyncSegmentToggle();
+                    opRenderSessions();
+                    if (opOverlay.classList.contains("active")) opSetInitialLoading(true);
+                    await Promise.all([opLoadConfig(), fetchInitialMessages()]);
+                    opShowStatus("已切换到会话：" + (targetSession.name || targetSession.id), "success");
+                } catch (err) {
+                    if (!opSessionSwitchQueued && lastSuccessfulSession) {
+                        opCurrentSessionId = lastSuccessfulSession.id;
+                        currentSessionId = lastSuccessfulSession.id;
+                        opResetConfigStateForSession(lastSuccessfulSession.id);
+                        opRenderSessions();
+                        if (opOverlay.classList.contains("active")) opSetInitialLoading(true);
+                        await Promise.all([opLoadConfig(), fetchInitialMessages()]);
+                    }
+                    if (!opSessionSwitchQueued) opShowStatus("切换会话失败：" + err.message, "error");
+                }
+            }
+        })();
+        opSessionSwitchPromise = task;
+        task.finally(function() {
+            if (opSessionSwitchPromise === task) opSessionSwitchPromise = null;
+            if (opSessionSwitchQueued) opRequestSessionSwitch(opSessionSwitchQueued);
+        });
     }
 
     function opRenderSessions() {
@@ -2355,32 +3035,7 @@ document.addEventListener("DOMContentLoaded", function (event) {
             item.appendChild(infoDiv);
             item.appendChild(idSpan);
 
-            item.addEventListener("click", async function() {
-                try {
-                    var res = await fetch(API_BASE + "/api/conversation", {
-                        method: "POST",
-                        headers: { "Content-Type": "application/json" },
-                        body: makeBody({ action: "switch_session", session_id: session.id })
-                    });
-                    var data = await res.json();
-                    if (await guardAuthResponse(res, data)) return;
-                    if (data.status === "success") {
-                        opCurrentSessionId = session.id;
-                        currentSessionId = session.id;
-                        loadSegConfig();
-                        opSyncSegmentToggle();
-                        opRenderSessions();
-                        opShowStatus("已切换到会话：" + (session.name || session.id), "success");
-                        await opLoadConfig();
-                        // 切换后清空聊天区并重新拉取 timeline
-                        await fetchInitialMessages();
-                    } else {
-                        opShowStatus(data.error || "切换会话失败", "error");
-                    }
-                } catch (err) {
-                    opShowStatus("切换会话失败：" + err.message, "error");
-                }
-            });
+            item.addEventListener("click", function() { opRequestSessionSwitch(session); });
 
             opSessionList.appendChild(item);
         });
@@ -2412,6 +3067,8 @@ document.addEventListener("DOMContentLoaded", function (event) {
     }
 
     async function opLoadConfig() {
+        var loadRevision = ++opConfigLoadRevision;
+        var revisionSnapshot = Object.assign({}, opConfigFieldRevisions);
         try {
             var res = await fetch(API_BASE + "/api/conversation", {
                 method: "POST",
@@ -2420,53 +3077,19 @@ document.addEventListener("DOMContentLoaded", function (event) {
             });
             var data = await res.json();
             if (await guardAuthResponse(res, data)) return;
-            if (data.error) {
-                opShowStatus("加载配置失败：" + data.error, "error");
-                return;
-            }
-
-            // 基本信息
-            opCurrentSessionId = data.id || null;
-            currentSessionId = opCurrentSessionId;
-
-            // 会话显示
-            if (typeof data.segmentedOutputEnabled === "boolean") {
-                segConfig.enabled = data.segmentedOutputEnabled;
-                saveSegConfig();
-            } else {
-                loadSegConfig();
-            }
-            if (opTimeAwarenessToggle && typeof data.timeAwarenessEnabled === "boolean") opTimeAwarenessToggle.checked = data.timeAwarenessEnabled;
-            opRandomProactiveEnabled = data.randomProactiveEnabled === true;
-            opScheduledProactiveEnabled = data.scheduledProactiveEnabled === true;
-            if (opRandomProactiveToggle) opRandomProactiveToggle.checked = opRandomProactiveEnabled;
-            if (opScheduledProactiveToggle) opScheduledProactiveToggle.checked = opScheduledProactiveEnabled;
-            opSyncProactiveNotice();
-            if (opProactiveLastError) {
-                var errorLines = [];
-                if (data.randomProactiveLastError) errorLines.push("上次随机主动消息执行失败，本次已跳过。");
-                if (data.scheduledProactiveLastError) errorLines.push("上次定时主动消息执行失败，本次已跳过。");
-                opProactiveLastError.hidden = errorLines.length === 0;
-                opProactiveLastError.textContent = errorLines.join(" ");
-            }
-            opSyncSegmentToggle();
-
-            // 对话模型
-            opSetChoiceValue("cfgAgentModel", opDisplayAgentModelId(data.agentModelId), opResolvedAgentDefaultModelId());
-            opUpdateAgentModelHero();
-
-            // 图片配置
-            var imgSettings = data.agentImageSettings || {};
-            opSetChoiceValue("cfgImgSize", imgSettings.size || "landscape", "landscape");
-            opSetChoiceValue("cfgImgArtistPresetId", imgSettings.artistPresetId || "default-anime", "default-anime");
-            opSetChoiceValue("cfgAgentImageModel", data.agentImageModelId || "", "");
-
-            opSyncMemorySettingsLink();
+            if (loadRevision !== opConfigLoadRevision) return;
+            if (!res.ok || data.error) throw new Error(data.error || "加载配置失败");
+            opAdoptServerConfig(data, revisionSnapshot);
             if (opCurrentPage === "proactive") opLoadProactiveSchedules();
-
         } catch (err) {
             console.log("加载会话配置失败：", err);
-            opShowStatus("加载配置失败：" + err.message, "error");
+            if (loadRevision === opConfigLoadRevision) opShowStatus("加载配置失败：" + err.message, "error");
+        } finally {
+            if (loadRevision === opConfigLoadRevision) {
+                var hasCurrentConfig = !!opConfigLoadedSessionId && opConfigLoadedSessionId === (opCurrentSessionId || currentSessionId);
+                if (hasCurrentConfig) opSetInitialLoading(false);
+                else opSetInitialLoading(true, "读取设置失败，请关闭后重试");
+            }
         }
     }
 
@@ -2498,8 +3121,12 @@ document.addEventListener("DOMContentLoaded", function (event) {
         }
         opSetSessionActionBusy(true);
         try {
+            await opWaitForPendingConfigSaves();
             await opPostConversation({ action: "rename_session", name: name });
-            await opLoadConfig();
+            opSessions.forEach(function(session) {
+                if (session && session.id === opCurrentSessionId) session.name = name;
+            });
+            opRenderSessions();
             await opLoadSessions();
             opShowStatus("会话已重命名", "success");
         } catch (err) {
@@ -2515,9 +3142,12 @@ document.addEventListener("DOMContentLoaded", function (event) {
         opSetSessionActionBusy(true);
         opShowStatus("正在删除会话...");
         try {
+            await opWaitForPendingConfigSaves();
             await opPostConversation({ action: "delete_session" });
             opCurrentSessionId = null;
             currentSessionId = null;
+            opResetConfigStateForSession(null);
+            if (opOverlay.classList.contains("active")) opSetInitialLoading(true);
             await opLoadConfig();
             await opLoadSessions();
             await fetchInitialMessages();
@@ -2532,22 +3162,32 @@ document.addEventListener("DOMContentLoaded", function (event) {
     async function opOpenPanel() {
         opOverlay.classList.add("active");
         opShowStatus("");
+        var hasCurrentConfig = !!opConfigLoadedSessionId && opConfigLoadedSessionId === (opCurrentSessionId || currentSessionId);
+        opSetInitialLoading(!hasCurrentConfig);
         opSetPage(opCurrentPage || "session");
-        opSyncSegmentToggle();
+        if (hasCurrentConfig) opApplyConfigPatchToControls(opDesiredConfig);
         opRenderSessionLoading();
         opRenderAgentModelLoading();
         opRenderImageLoading();
+        if (opVisionModels.length) opRenderVisionModels(opDesiredConfig.agent_vision_model_id || "");
+        else opRenderVisionModelLoading();
         if (opPanelLoadPromise) return opPanelLoadPromise;
         opPanelLoadPromise = (async function() {
             var sessionsPromise = opLoadSessions();
+            var configPromise = opLoadConfig();
             await Promise.all([
                 opLoadSuccessRates(),
-                opLoadAgentModelOptions(),
-                opLoadImageOptions()
+                opLoadAgentModelOptions(false),
+                opLoadImageOptions(false),
+                opLoadVisionModelOptions(false),
+                configPromise
             ]);
-            opRenderAgentModels(opGetChoiceValue("cfgAgentModel", opResolvedAgentDefaultModelId()));
-            opRenderImageModels(opGetChoiceValue("cfgAgentImageModel", ""));
-            await Promise.all([opLoadConfig(), sessionsPromise]);
+            opRenderAgentModels(opDisplayAgentModelId(opDesiredConfig.agent_model_id));
+            opRenderImageModels(opDesiredConfig.agent_image_model_id || "");
+            opRenderArtistPresets(opDesiredConfig.img_artist_preset_id || "default-anime");
+            opRenderVisionModels(opDesiredConfig.agent_vision_model_id || "");
+            opApplyConfigPatchToControls(opDesiredConfig);
+            await sessionsPromise;
         })();
         try {
             await opPanelLoadPromise;
@@ -2567,6 +3207,18 @@ document.addEventListener("DOMContentLoaded", function (event) {
     });
     if (opRandomProactiveToggle) opRandomProactiveToggle.addEventListener("change", function() { opSaveProactiveSetting("random", opRandomProactiveToggle.checked === true); });
     if (opScheduledProactiveToggle) opScheduledProactiveToggle.addEventListener("change", function() { opSaveProactiveSetting("scheduled", opScheduledProactiveToggle.checked === true); });
+    if (opTimeAwarenessToggle) {
+        opTimeAwarenessToggle.addEventListener("change", function() {
+            var enabled = opTimeAwarenessToggle.checked === true;
+            if (!enabled && (opRandomProactiveEnabled || opScheduledProactiveEnabled)) {
+                opTimeAwarenessToggle.checked = true;
+                opShowStatus("请先关闭随机主动消息和定时主动消息", "error");
+                return;
+            }
+            opSyncProactiveNotice();
+            opQueueConfigPatch({ time_awareness_enabled: enabled });
+        });
+    }
     if (opProactiveRefreshBtn) opProactiveRefreshBtn.addEventListener("click", opLoadProactiveSchedules);
     if (opSubnav) {
         opSubnav.addEventListener("click", function(e) {
@@ -2577,10 +3229,7 @@ document.addEventListener("DOMContentLoaded", function (event) {
     }
     if (opSegToggle) {
         opSegToggle.addEventListener("change", function() {
-            // 分段输出和其它配置统一由“保存”提交，避免独立请求与保存请求竞态。
-            segConfig.enabled = opSegToggle.checked === true;
-            saveSegConfig();
-            opSyncSegmentToggle();
+            opSaveSegmentedOutput(opSegToggle.checked === true);
         });
     }
     if (opSessionRenameBtn) opSessionRenameBtn.addEventListener("click", opRenameCurrentSession);
@@ -2588,10 +3237,12 @@ document.addEventListener("DOMContentLoaded", function (event) {
 
     async function opDoCreate() {
         if (opSessionActionBusy) return;
+        var initialPatch = opCollectConfigPatch();
         opSetSessionActionBusy(true);
         opCreateBtn.disabled = true;
         opShowStatus("正在创建会话...");
         try {
+            await opWaitForPendingConfigSaves();
             var res = await fetch(API_BASE + "/api/conversation", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
@@ -2602,15 +3253,16 @@ document.addEventListener("DOMContentLoaded", function (event) {
             if (data.status === "success" && data.session_id) {
                 opCurrentSessionId = data.session_id;
                 currentSessionId = data.session_id;
+                opResetConfigStateForSession(data.session_id);
                 opSyncMemorySettingsLink();
-                loadSegConfig();
-                opSyncSegmentToggle();
+                opApplyConfigPatchToControls(initialPatch);
                 var newSession = { id: data.session_id, name: "新会话" };
                 opSessions.unshift(newSession);
                 opRenderSessions();
-                opShowStatus("会话创建成功，正在更新配置...", "success");
-                // 创建成功后自动调用更新
-                await opDoUpdate(true);
+                opQueueConfigPatch(initialPatch);
+                await opWaitForPendingConfigSaves();
+                await Promise.all([opLoadConfig(), fetchInitialMessages()]);
+                opShowStatus("会话创建成功", "success");
             } else {
                 opShowStatus(data.error || "创建会话失败", "error");
             }
@@ -2623,43 +3275,10 @@ document.addEventListener("DOMContentLoaded", function (event) {
         }
     }
 
-    async function opDoUpdate(isAutoCall) {
-        if (opUpdateInFlight) return;
-        opSetUpdateBusy(true);
-        opShowStatus(isAutoCall ? "正在更新配置..." : "正在更新配置...");
-        try {
-            var config = opCollectConfig();
-            var res = await fetch(API_BASE + "/api/conversation", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: makeBody(config)
-            });
-            var data = await res.json();
-            if (await guardAuthResponse(res, data)) return;
-            if (data.status === "success") {
-                segConfig.enabled = config.segmented_output_enabled === true;
-                saveSegConfig();
-                opShowStatus("配置更新成功", "success");
-                // 手动保存配置后退出操作面板；创建会话触发的内部保存仍留在当前页面。
-                if (!isAutoCall) {
-                    opClosePanel();
-                }
-                if (isAutoCall) await fetchInitialMessages();
-            } else {
-                opShowStatus(data.error || "更新配置失败", "error");
-            }
-        } catch (err) {
-            console.log("更新配置失败：", err);
-            opShowStatus("更新配置失败：" + err.message, "error");
-        } finally {
-            opSetUpdateBusy(false);
-        }
-    }
-
     opCreateBtn.addEventListener("click", opDoCreate);
-    opUpdateBtn.addEventListener("click", function() { opDoUpdate(false); });
 
     async function startConnectedApp() {
+        var configRevisionSnapshot = Object.assign({}, opConfigFieldRevisions);
         try {
             var res = await fetch(API_BASE + "/api/conversation", {
                 method: "POST",
@@ -2668,8 +3287,8 @@ document.addEventListener("DOMContentLoaded", function (event) {
             });
             var config = await res.json();
             if (await guardAuthResponse(res, config)) return;
-            if (config && config.id) { currentSessionId = config.id; }
-            loadSegConfig();
+            if (!res.ok || config.error) throw new Error(config.error || "加载会话配置失败");
+            opAdoptServerConfig(config, configRevisionSnapshot);
             await fetchInitialMessages();
             startPolling();
         } catch (err) {

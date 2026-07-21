@@ -6,13 +6,13 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <title>Aliya</title>
     <link rel="stylesheet" href="css/base.css">
-    <link rel="stylesheet" href="css/index-m.css">
+    <link rel="stylesheet" href="css/index-m.css?v=20260721-13">
     <link rel="stylesheet" href="css/loading-m.css">
 
 
     <script src="js/loading-m.js" defer></script>
     <script src="js/message-renderer.js" defer></script>
-    <script src="js/index-m.js" defer></script>
+    <script src="js/index-m.js?v=20260721-11" defer></script>
 
 
     <!-- 音乐引用 -->
@@ -127,14 +127,32 @@
                                     <textarea id="playerInput" placeholder="输入消息..."></textarea>
                                     <label class="image-upload-btn" title="添加图片" aria-label="添加图片">
                                         <input id="imageInput" type="file" accept="image/*" hidden>
+                                        <span class="media-upload-icon" aria-hidden="true">
+                                            <svg viewBox="0 0 24 20" focusable="false">
+                                                <path d="M3.5 2.5h17a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2h-17a2 2 0 0 1-2-2v-11a2 2 0 0 1 2-2Z"/>
+                                                <circle cx="7.2" cy="7" r="1.8"/>
+                                                <path d="m3 15 5-4.5 3.3 2.8 3.2-3.2 6.5 5.4"/>
+                                            </svg>
+                                            <span class="media-upload-mark">+</span>
+                                        </span>
+                                        <span class="media-upload-label" aria-hidden="true">MEDIA</span>
                                     </label>
                                 </div>
                                 <button id="sendBtn">发送</button>
                             </div>
 
                             <div class="loader" id="waitImg" role="status" aria-live="polite" hidden>
-                                <span class="loader-spinner" aria-hidden="true"></span>
-                                <span id="waitText">正在等待 Aliya 回复...</span>
+                                <span class="wait-clock" aria-hidden="true">
+                                    <svg viewBox="0 0 120 120" focusable="false">
+                                        <g class="wait-clock-orbit">
+                                            <circle class="wait-clock-outer" cx="60" cy="62" r="49"></circle>
+                                            <circle class="wait-clock-dot" cx="60" cy="13" r="5.5"></circle>
+                                        </g>
+                                        <circle class="wait-clock-inner" cx="60" cy="62" r="35"></circle>
+                                        <path class="wait-clock-hand" d="M60 40v22h22"></path>
+                                    </svg>
+                                </span>
+                                <span id="waitText" class="wait-loader-text">正在等待 Aliya 回复...</span>
                             </div>
     
     
@@ -301,6 +319,15 @@
                         <div class="op-choice-list op-agent-model-list" id="cfgAgentModel" role="group" aria-label="对话模型">
                             <div class="op-image-loading">正在加载对话模型...</div>
                         </div>
+                        <div class="op-vision-model" id="opVisionModelGroup" hidden>
+                            <span class="op-image-label">识图模型</span>
+                            <div class="op-vision-model-card">
+                                <select class="op-vision-model-select" id="cfgAgentVisionModel" aria-label="识图模型" disabled>
+                                    <option>正在加载识图模型...</option>
+                                </select>
+                                <span class="op-caption" id="opVisionModelCost">用于理解你发送的图片 · 识图费用：-</span>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -420,12 +447,6 @@
                 </div>
             </div>
 
-            <div class="op-actions">
-                <button id="opUpdateBtn" class="op-btn op-btn-update" type="button">
-                    <span class="op-btn-label">保存</span>
-                    <span class="op-btn-spinner" aria-hidden="true"></span>
-                </button>
-            </div>
             <div class="op-status" id="opStatus"></div>
         </div>
     </div>
