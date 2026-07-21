@@ -1796,7 +1796,7 @@ document.addEventListener("DOMContentLoaded", function (event) {
 
     sendBtn.addEventListener("click", sendMessage);
     playerInput.addEventListener("keydown", function (e) {
-        if (e.key === "Enter" && !e.ctrlKey) { e.preventDefault(); sendMessage(); }
+        if (e.key === "Enter" && (e.ctrlKey || e.shiftKey)) { e.preventDefault(); sendMessage(); }
     });
 
     // ==================== 设置面板 ====================
