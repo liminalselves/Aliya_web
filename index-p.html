@@ -6,12 +6,12 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Aliya</title>
     <link rel="stylesheet" href="css/base.css">
-    <link rel="stylesheet" href="css/index.css?v=20260722-01">
+    <link rel="stylesheet" href="css/index.css?v=20260722-04">
     <link rel="stylesheet" href="css/loading.css">
 
     <script src="js/loading.js" defer></script>
     <script src="js/message-renderer.js" defer></script>
-    <script src="js/index.js?v=20260721-11" defer></script>
+    <script src="js/index.js?v=20260722-04" defer></script>
 
     <!-- 音乐引用 -->
     <audio src="audio/开关.wav" id="buttonbgm" preload="auto"></audio>
@@ -437,8 +437,12 @@
 
             <div class="op-section">
                 <label class="op-label">鉴权 Token</label>
-                <input type="password" id="segToken" class="settings-input"
-                       autocomplete="off" spellcheck="false" placeholder="留空保持当前 Token">
+                <div class="token-save-row">
+                    <input type="password" id="segToken" class="settings-input"
+                           autocomplete="off" spellcheck="false" placeholder="留空保持当前 Token">
+                    <button id="tokenSaveBtn" class="token-save-btn" type="button">保存</button>
+                </div>
+                <div class="op-caption">粘贴新 Token 后点击“保存”验证并生效（也可按回车）。</div>
             </div>
 
             <div class="op-section">
@@ -456,9 +460,6 @@
                 <div class="op-caption">切换后立即生效，选择“不播放”可关闭背景音乐。</div>
             </div>
 
-            <div class="op-actions">
-                <button id="settingsSaveBtn" class="op-btn op-btn-create">保存</button>
-            </div>
             <div class="op-status" id="settingsStatus"></div>
         </div>
     </div>

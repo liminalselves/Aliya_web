@@ -1130,49 +1130,161 @@ body {
     font-size: 15rem;
 }
 
-/* 等待动画 */
+/* 回复等待：隐藏输入区，居中显示时钟。 */
 .loader {
-    display: none;
-    position: relative;
-    width: 20rem;
-    height: 20rem;
-    margin: 14rem auto;
-    border: 0.1rem solid #b2b0b2;
-    border-radius: 50%;
-    touch-action: manipulation; /* 禁用双击缩放 */
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 9px;
+    min-height: 42px;
+    padding: 0 12px;
+    box-sizing: border-box;
+    border: 1px solid #555;
+    border-radius: 10px;
+    background: #363636;
+    color: #c4c4c4;
+    font-size: 13px;
 }
 
-.rotator {
+.wait-clock {
+    width: 52px;
+    height: 52px;
+    color: #c9c9c9;
+    filter: drop-shadow(0 2px 3px rgba(0, 0, 0, 0.24));
+}
+
+.wait-clock svg {
+    display: block;
     width: 100%;
     height: 100%;
-    animation: rotate 2s linear infinite;
+    overflow: visible;
 }
 
-.ball {
-    position: absolute;
-    top: -0.7rem; /* 调整小球到边框外侧 */
-    left: 50%;
-    width: 1.2rem;
-    height: 1.2rem;
-    background: #b2b0b2;
-    border-radius: 50%;
-    transform: translateX(-50%);
+.wait-clock-orbit {
+    transform-box: view-box;
+    transform-origin: 50% 51.667%;
+    animation: wait-clock-orbit 2.8s linear infinite;
 }
 
-@keyframes rotate {
-    0% { transform: rotate(0deg); }
-    50% { transform: rotate(180deg); } 
-    80% { transform: rotate(360deg); } 
-    100% { transform: rotate(360deg); } 
+.wait-clock-outer {
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.15;
+    opacity: 0.9;
 }
-.loader-img{
+
+.wait-clock-dot {
+    fill: currentColor;
+}
+
+.wait-clock-inner {
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 6.5;
+    stroke-linecap: round;
+    opacity: 0.96;
+}
+
+.wait-clock-hand {
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 6.5;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+}
+
+.wait-loader-text {
     position: absolute;
-    top: 3.3rem;
-    left: 3.6rem;
-    width: 13.5rem;
-    height: 13.5rem;
-    border-radius: 50%;
+    width: 1px;
+    height: 1px;
     overflow: hidden;
+    clip: rect(0 0 0 0);
+    clip-path: inset(50%);
+    white-space: nowrap;
+}
+
+@keyframes wait-clock-orbit {
+    to { transform: rotate(360deg); }
+}
+
+.loader[hidden],
+.chat-loading-state[hidden] {
+    display: none;
+}
+
+#playerInputArea[hidden],
+#playerText.is-waiting #playerInputArea {
+    display: none !important;
+}
+
+#waitImg[hidden],
+#playerText:not(.is-waiting) #waitImg {
+    display: none !important;
+}
+
+#playerText.is-waiting {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+}
+
+#playerText.is-waiting #waitImg {
+    width: 100%;
+    height: 100%;
+    min-height: 0;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+}
+
+.chat-loading-spinner {
+    flex: 0 0 auto;
+    width: 15px;
+    height: 15px;
+    border: 2px solid rgba(255, 255, 255, 0.16);
+    border-top-color: #e6a15a;
+    border-radius: 50%;
+    animation: op-spin 0.8s linear infinite;
+}
+
+.chat-loading-state {
+    position: absolute;
+    z-index: 5;
+    top: 50%;
+    left: 4%;
+    right: 4%;
+    transform: translateY(-50%);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    min-height: 42px;
+    padding: 0 12px;
+    box-sizing: border-box;
+    border: 1px solid rgba(230, 161, 90, 0.3);
+    border-radius: 10px;
+    background: rgba(35, 35, 35, 0.92);
+    color: #c4c4c4;
+    font-size: 13px;
+    pointer-events: none;
+}
+
+.chat-loading-state[data-placement="top"] {
+    top: 10px;
+    transform: none;
+}
+
+.chat-loading-state[data-state="error"] {
+    border-color: rgba(198, 105, 8, 0.55);
+    color: #e0a06a;
+}
+
+.content .left.is-refreshing {
+    opacity: 0.68;
+    transition: opacity 0.2s ease;
 }
 
 #aliyaText img {
@@ -1230,24 +1342,132 @@ body {
     box-sizing: border-box;
 }
 
-.player-input-area textarea {
+.player-compose-row {
+    position: relative;
     width: 100%;
-    height: 18rem;
-    background-color: #2d2d2d;
+    min-height: 12rem;
+    max-height: 30rem;
+    overflow: hidden;
+    background: #2d2d2d;
     border: 0.2rem solid #555;
     border-radius: 1.5rem;
+    transition: border-color 0.2s, box-shadow 0.2s;
+    flex: 1 1 auto;
+}
+
+.player-compose-row:focus-within {
+    border-color: #888;
+    box-shadow: 0 0 0 0.3rem rgba(255, 255, 255, 0.06);
+}
+
+.player-input-area textarea {
+    display: block;
+    width: 100%;
+    height: 100%;
+    background: transparent;
+    border: 0;
+    border-radius: 0;
     color: #efefef;
     font-size: 4rem;
     line-height: 1.45;
-    padding: 2rem;
+    padding: 2rem 10rem 2rem 2rem;
     resize: none;
     outline: none;
     font-family: inherit;
     box-sizing: border-box;
+    overflow-y: auto;
 }
 
 .player-input-area textarea::placeholder {
     color: #777;
+}
+
+.image-upload-btn {
+    position: absolute;
+    z-index: 2;
+    top: 0;
+    right: 0;
+    width: 9rem;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;
+    gap: 0.6rem;
+    color: #aaa;
+    background: linear-gradient(180deg, #383838 0%, #2b2b2b 100%);
+    border: 0;
+    border-left: 0.2rem solid #555;
+    border-radius: 0;
+    cursor: pointer;
+    transition: color 0.18s ease, background 0.18s ease;
+}
+
+.media-upload-icon {
+    position: relative;
+    width: 4.6rem;
+    height: 3.8rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.media-upload-icon svg {
+    width: 4.2rem;
+    height: 3.5rem;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.35;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+}
+
+.media-upload-icon svg circle {
+    fill: currentColor;
+    stroke: none;
+}
+
+.media-upload-mark {
+    position: absolute;
+    top: -1rem;
+    right: -0.7rem;
+    min-width: 2.2rem;
+    height: 2.2rem;
+    padding: 0 0.3rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-sizing: border-box;
+    border: 0.2rem solid #666;
+    border-radius: 0.5rem;
+    background: #303030;
+    color: #d5d5d5;
+    font-size: 1.9rem;
+    font-weight: 500;
+    line-height: 1;
+}
+
+.media-upload-label {
+    color: #858585;
+    font-size: 1.8rem;
+    font-weight: 600;
+    line-height: 1;
+    letter-spacing: 0.12em;
+}
+
+.image-upload-btn.has-file {
+    color: #e6a15a;
+    background: linear-gradient(180deg, #403831 0%, #302c29 100%);
+}
+
+.image-upload-btn.has-file .media-upload-mark {
+    color: #2b241f;
+    background: #e6a15a;
+    border-color: #efb87e;
+}
+
+.image-upload-btn.has-file .media-upload-label {
+    color: #d8a36d;
 }
 
 .player-input-area button {
@@ -1889,6 +2109,36 @@ body {
     min-width: 0;
 }
 
+.token-save-row {
+    display: flex;
+    align-items: stretch;
+    gap: 8px;
+}
+.token-save-row .settings-input {
+    flex: 1;
+    min-width: 0;
+    width: auto;
+}
+.token-save-btn {
+    flex: 0 0 auto;
+    border: 0;
+    border-radius: 8px;
+    padding: 0 16px;
+    background: #d6740b;
+    color: #fff7ef;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    white-space: nowrap;
+}
+.token-save-btn:active {
+    transform: translateY(1px);
+}
+.token-save-btn:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+}
+
 .auth-overlay .auth-panel {
     width: min(94vw, 86rem);
     border: 0.2rem solid #555;
@@ -1991,6 +2241,7 @@ body > .content,
 .new-page > .content_main > .content,
 .content_1 {
     min-height: 0;
+    position: relative;
 }
 
 .content_main {
@@ -2189,14 +2440,51 @@ body > .content,
     padding: 8px;
 }
 
-.player-input-area textarea {
-    height: 72px;
-    padding: 10px 12px;
+.player-compose-row {
+    min-height: 64px;
+    max-height: 160px;
     border: 1px solid var(--mobile-border);
     border-radius: 10px;
+    background: #252525;
+}
+
+.player-input-area textarea {
+    height: 100%;
+    padding: 10px 52px 10px 12px;
+    border: 0;
+    border-radius: 0;
     font-size: 16px;
     line-height: 1.45;
-    background: #252525;
+    background: transparent;
+}
+
+.image-upload-btn {
+    width: 44px;
+    border-left: 1px solid var(--mobile-border);
+}
+
+.media-upload-icon {
+    width: 22px;
+    height: 18px;
+}
+
+.media-upload-icon svg {
+    width: 20px;
+    height: 16px;
+}
+
+.media-upload-mark {
+    top: -5px;
+    right: -4px;
+    min-width: 12px;
+    height: 12px;
+    border-width: 1px;
+    border-radius: 3px;
+    font-size: 10px;
+}
+
+.media-upload-label {
+    font-size: 9px;
 }
 
 .player-input-area button {
@@ -2213,6 +2501,16 @@ body > .content,
 .op-btn:active,
 .op-subnav-btn:active {
     transform: translateY(1px);
+}
+
+/* 移动端等待态：right_3 为自适应高度，给 loader 一个合适的最小高度。 */
+#playerText.is-waiting {
+    min-height: 96px;
+}
+
+#playerText.is-waiting #waitImg {
+    height: auto;
+    min-height: 96px;
 }
 
 /* 移动端弹窗：保留完整功能，但降低字号和内边距，避免内容被截断。 */
@@ -2287,14 +2585,17 @@ body > .content,
 }
 
 .op-subnav {
-    gap: 6px;
+    gap: 4px;
     margin-bottom: 14px;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
 }
 
 .op-subnav-btn {
     min-height: 40px;
     border-radius: 8px;
-    font-size: 13px;
+    font-size: 12px;
+    padding: 0 2px;
+    white-space: nowrap;
 }
 
 .op-section {
@@ -2413,6 +2714,352 @@ body > .content,
     padding: 10px 14px;
     border-radius: 9px;
     font-size: 14px;
+}
+
+/* ==================== 消息元信息与日期分隔线 ==================== */
+#aliyaText li.message-meta {
+    width: fit-content;
+    max-width: calc(92% - 12px);
+    min-height: 0;
+    margin: 4px 6px 10px;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 3px;
+    background: transparent;
+    border: 0;
+    border-radius: 0;
+    color: #a9a9a9;
+    font-size: 11px;
+    line-height: 1.35;
+    letter-spacing: 0.04em;
+    cursor: default;
+}
+
+#aliyaText li.message-meta.player {
+    margin-left: auto;
+    margin-right: 6px;
+    align-items: flex-end;
+    text-align: right;
+}
+
+#aliyaText li.message-meta.aliya {
+    margin-left: 6px;
+}
+
+#aliyaText .message-time,
+#aliyaText .message-schedule-summary {
+    display: inline-flex;
+    align-items: center;
+    color: #a9a9a9;
+    white-space: normal;
+}
+
+#aliyaText .message-schedule-summary {
+    color: #bac5b2;
+}
+
+#aliyaText .message-schedule-summary.is-failed {
+    padding-left: 5px;
+    border-left: 1px solid rgba(225, 131, 100, 0.58);
+    color: #e1a084;
+}
+
+#aliyaText li.timeline-date-divider {
+    width: fit-content;
+    max-width: calc(100% - 24px);
+    min-height: 0;
+    margin: 12px auto;
+    padding: 4px 8px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    background: #252525;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 999px;
+    color: #b8b8b8;
+    font-size: 11px;
+    line-height: 1;
+    letter-spacing: 0.03em;
+    cursor: default;
+}
+
+#aliyaText .timeline-date-divider-line {
+    width: 1px;
+    height: 1em;
+    background: rgba(255, 255, 255, 0.22);
+}
+
+/* ==================== 识图模型 ==================== */
+.op-vision-model {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-top: 12px;
+}
+
+.op-vision-model-card {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    border: 1px solid rgba(230, 161, 90, 0.26);
+    border-radius: 10px;
+    background: #2a2521;
+    padding: 10px;
+}
+
+.op-vision-model-select {
+    width: 100%;
+    min-height: 40px;
+    border: 1px solid #64554a;
+    border-radius: 8px;
+    background: #211d1b;
+    color: #efefef;
+    cursor: pointer;
+    font: inherit;
+    font-size: 14px;
+    padding: 8px 10px;
+    box-sizing: border-box;
+}
+
+.op-vision-model-select:disabled {
+    cursor: wait;
+    color: #8d8d8d;
+}
+
+/* ==================== 主动消息 ==================== */
+.op-proactive-hero {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px;
+    border: 1px solid rgba(230, 161, 90, 0.28);
+    border-radius: 10px;
+    background: linear-gradient(135deg, #2a241d, #28251f);
+}
+
+.op-proactive-hero-icon {
+    width: 38px;
+    height: 38px;
+    display: grid;
+    place-items: center;
+    border-radius: 50%;
+    color: #e6a15a;
+    background: rgba(230, 161, 90, 0.12);
+    font-size: 24px;
+}
+
+.op-proactive-title,
+.op-proactive-card-description {
+    font-weight: 700;
+    color: #f0f0f0;
+}
+
+.op-proactive-title {
+    font-size: 16px;
+}
+
+.op-proactive-caption {
+    margin-top: 3px;
+    color: #a5a09b;
+    font-size: 12px;
+}
+
+.op-proactive-notice {
+    padding: 10px 12px;
+    border-left: 3px solid #d6740b;
+    border-radius: 6px;
+    background: #302722;
+    color: #e6c49f;
+    font-size: 13px;
+    line-height: 1.5;
+    margin-bottom: 14px;
+}
+
+.op-proactive-error {
+    margin-top: 10px;
+    border-left-color: #c66908;
+}
+
+.op-proactive-settings {
+    display: grid;
+    gap: 8px;
+}
+
+.op-proactive-switch-card {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    align-items: start;
+    gap: 10px;
+    padding: 11px 12px;
+    border: 1px solid #454545;
+    border-radius: 10px;
+    background: #252525;
+    cursor: pointer;
+    transition: border-color 0.2s, background 0.2s;
+}
+
+.op-proactive-switch-card input {
+    width: 18px;
+    height: 18px;
+    margin: 2px 0 0;
+}
+
+.op-proactive-switch-copy {
+    display: grid;
+    gap: 3px;
+}
+
+.op-proactive-switch-title {
+    color: #efefef;
+    font-size: 14px;
+    font-weight: 700;
+}
+
+.op-proactive-switch-caption {
+    color: #999;
+    font-size: 12px;
+    line-height: 1.5;
+}
+
+.op-proactive-list-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 10px;
+}
+
+.op-proactive-list-head .op-label {
+    margin-bottom: 3px;
+}
+
+.op-icon-btn {
+    width: 36px;
+    height: 36px;
+    flex: 0 0 auto;
+    border: 1px solid #555;
+    border-radius: 50%;
+    background: #44392f;
+    color: #e8d5c0;
+    cursor: pointer;
+    font-size: 18px;
+    transition: background 0.2s, transform 0.2s;
+}
+
+.op-icon-btn:active {
+    transform: rotate(20deg);
+}
+
+.op-proactive-list {
+    display: grid;
+    gap: 8px;
+    margin-top: 10px;
+}
+
+.op-proactive-card {
+    padding: 12px;
+    border: 1px solid #454545;
+    border-radius: 10px;
+    background: #252525;
+}
+
+.op-proactive-card-top {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 10px;
+}
+
+.op-proactive-card-description {
+    min-width: 0;
+    font-size: 14px;
+    line-height: 1.45;
+    overflow-wrap: anywhere;
+}
+
+.op-proactive-status {
+    flex: 0 0 auto;
+    padding: 2px 8px;
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: 700;
+}
+
+.op-proactive-status.status-active {
+    color: #eec992;
+    background: rgba(230, 161, 90, 0.13);
+}
+
+.op-proactive-status.status-paused {
+    color: #e6c49f;
+    background: rgba(214, 116, 11, 0.16);
+}
+
+.op-proactive-status.status-completed,
+.op-proactive-status.status-cancelled {
+    color: #aaa;
+    background: rgba(255, 255, 255, 0.08);
+}
+
+.op-proactive-card-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px 10px;
+    margin-top: 8px;
+    color: #999;
+    font-size: 12px;
+    line-height: 1.5;
+    overflow-wrap: anywhere;
+}
+
+.op-proactive-card-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 7px;
+    margin-top: 10px;
+}
+
+.op-proactive-action-btn {
+    border: 1px solid #675b4e;
+    border-radius: 7px;
+    padding: 6px 11px;
+    background: #40372e;
+    color: #e8d5c0;
+    cursor: pointer;
+    font: inherit;
+    font-size: 12px;
+}
+
+.op-proactive-action-btn.danger {
+    border-color: #6e4a32;
+    background: #3d2c23;
+    color: #e6c49f;
+}
+
+.op-proactive-action-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.op-proactive-empty {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    min-height: 48px;
+    border-radius: 10px;
+    background: #252525;
+    color: #999;
+    font-size: 13px;
+}
+
+.op-model-description {
+    margin: 0;
+    color: #999;
+    font-size: 12px;
+    line-height: 1.5;
+    overflow-wrap: anywhere;
 }
 
 @media (max-width: 380px) {

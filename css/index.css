@@ -2463,6 +2463,39 @@ body {
     font-size: 1.6rem;
     outline: none;
 }
+.token-save-row {
+    display: flex;
+    align-items: stretch;
+    gap: 1rem;
+}
+.token-save-row .settings-input {
+    flex: 1;
+    min-width: 0;
+    width: auto;
+}
+.token-save-btn {
+    flex: 0 0 auto;
+    border: 0;
+    border-radius: 0.8rem;
+    padding: 0 2.2rem;
+    background: #d6740b;
+    color: #fff7ef;
+    font-size: 1.6rem;
+    font-weight: 600;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: background 0.15s ease;
+}
+.token-save-btn:hover {
+    background: #e6862a;
+}
+.token-save-btn:active {
+    transform: translateY(1px);
+}
+.token-save-btn:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+}
 .settings-input:focus {
     border-color: #d6740b;
 }

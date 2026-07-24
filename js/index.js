@@ -1378,6 +1378,7 @@ document.addEventListener("DOMContentLoaded", function (event) {
 
     function renderPreparedTimelineMessages(items, scrollToLatest) {
         var oldScrollTop = aliyaText.scrollTop;
+        var oldScrollHeight = aliyaText.scrollHeight;
         clearSegmentPlaybackTimers();
         aliyaText.innerHTML = "";
         for (var renderedIndex = 0; renderedIndex < items.length; renderedIndex++) {
@@ -1399,7 +1400,12 @@ document.addEventListener("DOMContentLoaded", function (event) {
             }
         }
         requestAnimationFrame(function() {
-            aliyaText.scrollTop = scrollToLatest ? aliyaText.scrollHeight : oldScrollTop;
+            if (scrollToLatest) {
+                aliyaText.scrollTop = aliyaText.scrollHeight;
+            } else {
+                // 向上加载历史或重排时按高度差补偿，保持用户当前查看的内容不跳到顶部。
+                aliyaText.scrollTop = oldScrollTop + (aliyaText.scrollHeight - oldScrollHeight);
+            }
         });
     }
 
@@ -1523,8 +1529,6 @@ document.addEventListener("DOMContentLoaded", function (event) {
         if (isLoadingMore || noMoreHistory || earliestMsgId === null) return;
         isLoadingMore = true;
         setChatLoading(true, "正在加载更早的消息...", "top");
-        // 记录当前滚动位置，加载后恢复，避免跳到底部
-        var oldScrollHeight = aliyaText.scrollHeight;
 
         try {
             var res = await fetch(API_BASE + "/api/conversation", {
@@ -1548,9 +1552,7 @@ document.addEventListener("DOMContentLoaded", function (event) {
                     // 返回的全部是重复，说明没有更多了
                     noMoreHistory = true;
                 }
-                // 保持滚动位置：补偿新增高度
-                var newScrollHeight = aliyaText.scrollHeight;
-                aliyaText.scrollTop += (newScrollHeight - oldScrollHeight);
+                // 滚动位置由 renderPreparedTimelineMessages 统一按高度差补偿，避免光标留在顶部导致重复拉取。
             } else {
                 // 没有返回数据，标记没有更多
                 noMoreHistory = true;
@@ -1809,7 +1811,6 @@ document.addEventListener("DOMContentLoaded", function (event) {
     var settingsBtn = document.getElementById("settingsBtn");
     var settingsOverlay = document.getElementById("settingsOverlay");
     var settingsCloseBtn = document.getElementById("settingsCloseBtn");
-    var settingsSaveBtn = document.getElementById("settingsSaveBtn");
     var settingsStatus = document.getElementById("settingsStatus");
     var segTokenInput = document.getElementById("segToken");
     var backgroundMusicSelect = document.getElementById("backgroundMusicSelect");
@@ -1839,29 +1840,43 @@ document.addEventListener("DOMContentLoaded", function (event) {
         });
     }
 
-    settingsSaveBtn.addEventListener("click", async function() {
-        // token 处理
+    // Token 保存：点击输入框右侧“保存”按钮或按回车后验证并应用。
+    var tokenSaveBtn = document.getElementById("tokenSaveBtn");
+    async function applyTokenFromInput() {
         var newToken = segTokenInput.value.trim();
-        if (newToken && newToken !== mskToken) {
-            settingsStatus.textContent = "正在验证 token...";
+        if (!newToken) return;
+        if (newToken === mskToken) {
+            settingsStatus.textContent = "Token 未变化";
             settingsStatus.className = "op-status";
-            var isValid = await validateAndActivateToken(newToken);
-            if (!isValid) {
-                settingsStatus.textContent = "token 无效或已过期";
-                settingsStatus.className = "op-status error";
-                return;
-            }
-            mskToken = newToken;
-            saveToken();
-            await startConnectedApp();
+            setTimeout(function() { settingsStatus.textContent = ""; settingsStatus.className = "op-status"; }, 1500);
+            return;
         }
-
-        settingsStatus.textContent = "已保存";
+        settingsStatus.textContent = "正在验证 token...";
+        settingsStatus.className = "op-status";
+        if (tokenSaveBtn) tokenSaveBtn.disabled = true;
+        var isValid = await validateAndActivateToken(newToken);
+        if (!isValid) {
+            if (tokenSaveBtn) tokenSaveBtn.disabled = false;
+            settingsStatus.textContent = "token 无效或已过期";
+            settingsStatus.className = "op-status error";
+            return;
+        }
+        mskToken = newToken;
+        saveToken();
+        segTokenInput.value = "";
+        segTokenInput.placeholder = "留空保持当前 Token";
+        if (tokenSaveBtn) tokenSaveBtn.disabled = false;
+        settingsStatus.textContent = "token 已更新";
         settingsStatus.className = "op-status success";
         setTimeout(function() {
             settingsStatus.textContent = "";
             settingsStatus.className = "op-status";
         }, 2000);
+        await startConnectedApp();
+    }
+    if (tokenSaveBtn) tokenSaveBtn.addEventListener("click", applyTokenFromInput);
+    segTokenInput.addEventListener("keydown", function(e) {
+        if (e.key === "Enter") { e.preventDefault(); applyTokenFromInput(); }
     });
 
     // ==================== Operation 面板 ====================

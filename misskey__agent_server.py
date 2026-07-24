@@ -237,6 +237,43 @@ def _clear_cached_session_id(token, session_id=None):
             _session_state.pop(key, None)
 
 
+# 每个 token 的会话解析锁：串行化同一账号的会话解析，避免并发首请求重复创建会话。
+_token_op_locks = {}
+_token_op_locks_guard = threading.Lock()
+# 每个 token 同时只允许一个 /api/chat 在途，避免并发请求堆满上游 120s 长连接。
+_chat_inflight = set()
+_chat_inflight_guard = threading.Lock()
+_TOKEN_OP_LOCKS_CAP = 2048
+
+
+def _token_op_lock(token):
+    key = _token_fingerprint(token)
+    with _token_op_locks_guard:
+        lock = _token_op_locks.get(key)
+        if lock is None:
+            if len(_token_op_locks) >= _TOKEN_OP_LOCKS_CAP:
+                _token_op_locks.clear()
+            lock = threading.Lock()
+            _token_op_locks[key] = lock
+        return lock
+
+
+def _chat_try_enter(token):
+    """尝试进入 chat 临界区；同一 token 已有请求在途时返回 False。"""
+    key = _token_fingerprint(token)
+    with _chat_inflight_guard:
+        if key in _chat_inflight:
+            return False
+        _chat_inflight.add(key)
+        return True
+
+
+def _chat_exit(token):
+    key = _token_fingerprint(token)
+    with _chat_inflight_guard:
+        _chat_inflight.discard(key)
+
+
 def _create_session_data(token):
     _ensure_required_style_subscription({"styleId": DIALOGUE_STYLE_ID}, token)
     url = f"https://{MSK_HOST}/api/agents/sessions/create"
@@ -314,7 +351,12 @@ def _resolve_aliya_character_ids(sessions):
 
 
 def _ensure_session_id(token, create_if_missing=True):
-    """确保当前 token 对应账号有一个 Aliya 会话。"""
+    """确保当前 token 对应账号有一个 Aliya 会话（按 token 串行，避免并发重复创建）。"""
+    with _token_op_lock(token):
+        return _ensure_session_id_locked(token, create_if_missing)
+
+
+def _ensure_session_id_locked(token, create_if_missing=True):
     cached_session_id = _get_cached_session_id(token)
 
     if cached_session_id:
@@ -425,7 +467,7 @@ def _message_owner_key(token):
     return _token_fingerprint(token) if token else None
 
 
-def _add_message(role, content, msk_msg_id=None, token=None, metadata=None):
+def _add_message(role, content, msk_msg_id=None, token=None, metadata=None, session_id=None):
     """线程安全地添加消息到存储"""
     global _msg_id_counter
     owner = _message_owner_key(token)
@@ -507,49 +549,54 @@ def poll():
 @app.route("/api/chat", methods=["POST"])
 def chat():
     """cosmos和aliya的双向奔赴"""
-    data = request.get_json()
+    data = request.get_json(silent=True) or {}
     token = _token_from_json(data)
     if not token:
         return jsonify({"error": "缺少鉴权 token"}), 401
     raw_message = data.get("message") if isinstance(data, dict) else None
     if not isinstance(raw_message, str):
         return jsonify({"error": "消息必须是字符串"}), 400
-    player_msg = raw_message.strip() if isinstance(raw_message, str) else ""
+    player_msg = raw_message.strip()
     file_id = _string_from_json(data, "file_id", 128)
     if not player_msg and not file_id:
         return jsonify({"error": "消息不能为空"}), 400
     if len(player_msg) > MAX_MESSAGE_CHARS:
         return jsonify({"error": f"消息不能超过 {MAX_MESSAGE_CHARS} 字符"}), 400
 
-    _add_message("player", player_msg or "[图片消息]", token=token, metadata={"file_id": file_id} if file_id else None)
-    result = _send_to_misskey(player_msg, token, file_id=file_id)
-    
-    if isinstance(result, dict) and result.get("error"):
-        return jsonify({
-            "status": "error",
-            "reply": result["error"],
-        }), 500
-    elif isinstance(result, dict):
-        return jsonify({
-            "status": "success",
-            "reply": "消息已发送并收到回复",
-            "assistant_message": result["text"],
-            "assistant_message_id": result.get("messageId"),
-            "image_recognition_status": result.get("imageRecognitionStatus"),
-            "image_recognition_description": result.get("imageRecognitionDescription"),
-            "proactive_schedule_action_types": result.get("proactiveScheduleActionTypes", []),
-            "proactive_schedule_control_failed": result.get("proactiveScheduleControlFailed", False),
-        })
-    elif result is True:
-        return jsonify({
-            "status": "success",
-            "reply": "消息已发送，等待Aliya回复..."
-        })
-    else:
-        return jsonify({
-            "status": "error",
-            "reply": "发送到 Misskey 失败，请检查网络"
-        }), 500
+    if not _chat_try_enter(token):
+        return jsonify({"error": "上一条消息仍在处理中，请稍候再试"}), 429
+    try:
+        _add_message("player", player_msg or "[图片消息]", token=token, metadata={"file_id": file_id} if file_id else None)
+        result = _send_to_misskey(player_msg, token, file_id=file_id)
+
+        if isinstance(result, dict) and result.get("error"):
+            return jsonify({
+                "status": "error",
+                "reply": result["error"],
+            }), 500
+        elif isinstance(result, dict):
+            return jsonify({
+                "status": "success",
+                "reply": "消息已发送并收到回复",
+                "assistant_message": result["text"],
+                "assistant_message_id": result.get("messageId"),
+                "image_recognition_status": result.get("imageRecognitionStatus"),
+                "image_recognition_description": result.get("imageRecognitionDescription"),
+                "proactive_schedule_action_types": result.get("proactiveScheduleActionTypes", []),
+                "proactive_schedule_control_failed": result.get("proactiveScheduleControlFailed", False),
+            })
+        elif result is True:
+            return jsonify({
+                "status": "success",
+                "reply": "消息已发送，等待Aliya回复..."
+            })
+        else:
+            return jsonify({
+                "status": "error",
+                "reply": "发送到 Misskey 失败，请检查网络"
+            }), 500
+    finally:
+        _chat_exit(token)
 
 #会话管理
 @app.route("/api/conversation", methods=["POST"])
@@ -690,7 +737,7 @@ def _create_session(token):
 def _update_session(data, token):
     """向 Misskey 更新会话"""
     try:
-        _ensure_required_style_subscription(token)
+        _ensure_required_style_subscription({"dialogueStyleId": DIALOGUE_STYLE_ID}, token)
         session_id = _current_or_requested_session_id(data, token)
     except Exception as e:
         logging.error(f"准备更新会话前获取会话失败: {e}")
@@ -699,7 +746,8 @@ def _update_session(data, token):
     payload = {
         "i": token,
         "sessionId": session_id,
-        "dialogueStyleId": data.get("dialogueStyleId") or DIALOGUE_STYLE_ID,
+        # 文风强制使用固定值，不允许前端自选
+        "dialogueStyleId": DIALOGUE_STYLE_ID,
     }
     if "agent_image_model_id" in data:
         payload["agentImageModelId"] = _image_model_id_from_data(data)
@@ -1258,7 +1306,7 @@ def _send_to_misskey(text, token, file_id=None):
                 }
                 if assistant_text:
                     logging.info("<<< 已收到 Misskey 同步回复")
-                    _add_message("aliya", assistant_text, msk_msg_id=assistant_msg_id, token=token, metadata=metadata)
+                    _add_message("aliya", assistant_text, msk_msg_id=assistant_msg_id, token=token, metadata=metadata, session_id=session_id)
                     return {"text": assistant_text, "messageId": assistant_msg_id, **metadata}
                 else:
                     logging.warning("API 返回成功，但未找到 assistantText 字段")
@@ -1519,15 +1567,6 @@ def miauth_check():
         logging.error(f"MiAuth check 失败: {e}")
         return jsonify({"ok": False, "error": str(e)}), 500
 
-
-@app.route("/api/debug_style_enforcement", methods=["GET"])
-def debug_style_enforcement():
-    return jsonify({
-        "ok": True,
-        "server": "misskey__agent_server.py",
-        "styleEnforcement": "show-session-check-styleId-list-usable-by-styleId-subscribe-if-missing-update-show-verify-before-send",
-        "dialogueStyleId": DIALOGUE_STYLE_ID,
-    })
 
 if __name__ == "__main__":
     logging.info("服务启动，等待前端设置 token...")
