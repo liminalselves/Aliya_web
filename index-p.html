@@ -274,6 +274,7 @@
                 <button type="button" class="op-subnav-btn" data-op-target="draw">生图</button>
                 <button type="button" class="op-subnav-btn" data-op-target="proactive">主动消息</button>
                 <button type="button" class="op-subnav-btn" data-op-target="memory">记忆</button>
+                <button type="button" class="op-subnav-btn" data-op-target="style">文风</button>
             </div>
 
             <div class="op-page" data-op-page="model">
@@ -394,6 +395,19 @@
                        href="https://misskey.liminalselves.top/agents" target="_blank" rel="noopener noreferrer">
                         前往 Misskey 设置记忆
                     </a>
+                </div>
+            </div>
+
+            <div class="op-page" data-op-page="style">
+                <div class="op-section">
+                    <label class="op-label">文风选择</label>
+                    <div class="op-choice-list" id="cfgStyle" role="group" aria-label="文风">
+                        <div class="op-image-loading">正在加载文风...</div>
+                    </div>
+                    <div class="op-caption">选择文风后将自动订阅并立即生效。未选择时使用默认文风。</div>
+                    <div class="op-actions op-actions-inline" style="margin-top:1.2rem">
+                        <button id="opStyleResetBtn" class="op-btn op-btn-update" type="button">恢复默认文风</button>
+                    </div>
                 </div>
             </div>
 

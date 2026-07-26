@@ -1559,7 +1559,7 @@ body {
 }
 .op-subnav {
     display: grid;
-    grid-template-columns: repeat(5, minmax(0, 1fr));
+    grid-template-columns: repeat(6, minmax(0, 1fr));
     gap: 0.8rem;
     margin-bottom: 2rem;
 }
@@ -1997,9 +1997,9 @@ body {
     align-items: center;
     gap: 1.2rem;
     padding: 1.3rem 1.5rem;
-    border: 1px solid rgba(185, 242, 65, 0.28);
+    border: 1px solid #454545;
     border-radius: 0.9rem;
-    background: linear-gradient(135deg, #19251b, #22251f);
+    background: #252525;
 }
 
 .op-proactive-hero-icon {
@@ -2008,8 +2008,8 @@ body {
     display: grid;
     place-items: center;
     border-radius: 50%;
-    color: #b9f241;
-    background: rgba(185, 242, 65, 0.12);
+    color: #efefef;
+    background: rgba(255, 255, 255, 0.08);
     font-size: 2.8rem;
 }
 
@@ -2063,8 +2063,8 @@ body {
 }
 
 .op-proactive-switch-card:hover {
-    border-color: #6a775e;
-    background: #292d29;
+    border-color: #666;
+    background: #2a2a2a;
 }
 
 .op-proactive-switch-card input {
@@ -2107,15 +2107,15 @@ body {
     flex: 0 0 auto;
     border: 1px solid #555;
     border-radius: 50%;
-    background: #3a443a;
-    color: #d4e8c7;
+    background: #3a3a3a;
+    color: #e0e0e0;
     cursor: pointer;
     font-size: 2rem;
     transition: background 0.2s, transform 0.2s;
 }
 
 .op-icon-btn:hover {
-    background: #52624d;
+    background: #4a4a4a;
     transform: rotate(20deg);
 }
 
@@ -2160,8 +2160,8 @@ body {
 }
 
 .op-proactive-status.status-active {
-    color: #c9ee92;
-    background: rgba(185, 242, 65, 0.13);
+    color: #e0e0e0;
+    background: rgba(255, 255, 255, 0.1);
 }
 
 .op-proactive-status.status-paused {
@@ -2194,11 +2194,11 @@ body {
 }
 
 .op-proactive-action-btn {
-    border: 1px solid #596756;
+    border: 1px solid #555;
     border-radius: 0.6rem;
     padding: 0.55rem 1rem;
-    background: #354034;
-    color: #d4e8c7;
+    background: #333;
+    color: #e0e0e0;
     cursor: pointer;
     font: inherit;
     font-size: 1.2rem;

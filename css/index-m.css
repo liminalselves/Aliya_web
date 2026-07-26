@@ -1536,7 +1536,7 @@ body {
 
 .op-subnav {
     display: grid;
-    grid-template-columns: repeat(5, minmax(0, 1fr));
+    grid-template-columns: repeat(6, minmax(0, 1fr));
     gap: 1.4rem;
     margin-bottom: 4rem;
 }
@@ -2587,7 +2587,7 @@ body > .content,
 .op-subnav {
     gap: 4px;
     margin-bottom: 14px;
-    grid-template-columns: repeat(5, minmax(0, 1fr));
+    grid-template-columns: repeat(6, minmax(0, 1fr));
 }
 
 .op-subnav-btn {
@@ -2834,9 +2834,9 @@ body > .content,
     align-items: center;
     gap: 12px;
     padding: 12px;
-    border: 1px solid rgba(230, 161, 90, 0.28);
+    border: 1px solid #454545;
     border-radius: 10px;
-    background: linear-gradient(135deg, #2a241d, #28251f);
+    background: #252525;
 }
 
 .op-proactive-hero-icon {
@@ -2845,8 +2845,8 @@ body > .content,
     display: grid;
     place-items: center;
     border-radius: 50%;
-    color: #e6a15a;
-    background: rgba(230, 161, 90, 0.12);
+    color: #efefef;
+    background: rgba(255, 255, 255, 0.08);
     font-size: 24px;
 }
 
@@ -2940,8 +2940,8 @@ body > .content,
     flex: 0 0 auto;
     border: 1px solid #555;
     border-radius: 50%;
-    background: #44392f;
-    color: #e8d5c0;
+    background: #3a3a3a;
+    color: #e0e0e0;
     cursor: pointer;
     font-size: 18px;
     transition: background 0.2s, transform 0.2s;
@@ -2987,8 +2987,8 @@ body > .content,
 }
 
 .op-proactive-status.status-active {
-    color: #eec992;
-    background: rgba(230, 161, 90, 0.13);
+    color: #e0e0e0;
+    background: rgba(255, 255, 255, 0.1);
 }
 
 .op-proactive-status.status-paused {
@@ -3021,11 +3021,11 @@ body > .content,
 }
 
 .op-proactive-action-btn {
-    border: 1px solid #675b4e;
+    border: 1px solid #555;
     border-radius: 7px;
     padding: 6px 11px;
-    background: #40372e;
-    color: #e8d5c0;
+    background: #333;
+    color: #e0e0e0;
     cursor: pointer;
     font: inherit;
     font-size: 12px;

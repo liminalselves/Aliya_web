@@ -2736,6 +2736,8 @@ document.addEventListener("DOMContentLoaded", function (event) {
                     img_size: opGetChoiceValue("cfgImgSize", "landscape"),
                     img_artist_preset_id: opGetChoiceValue("cfgImgArtistPresetId", "default-anime")
                 });
+            } else if (groupId === "cfgStyle") {
+                opQueueConfigPatch({ dialogueStyleId: nextValue });
             }
         });
         opSetChoiceValue(groupId, opGetChoiceValue(groupId));
@@ -2746,6 +2748,15 @@ document.addEventListener("DOMContentLoaded", function (event) {
     opBindChoiceGroup("cfgImgSize");
     opBindChoiceGroup("cfgImgArtistPresetId");
     opBindChoiceGroup("cfgStyle");
+
+    var opStyleResetBtn = document.getElementById("opStyleResetBtn");
+    if (opStyleResetBtn) {
+        opStyleResetBtn.addEventListener("click", function() {
+            opSetChoiceValue("cfgStyle", "");
+            opCurrentStyleId = "";
+            opQueueConfigPatch({ dialogueStyleId: "" });
+        });
+    }
 
     var opVisionModelSelect = document.getElementById("cfgAgentVisionModel");
     if (opVisionModelSelect) {
