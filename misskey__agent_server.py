@@ -1,6 +1,7 @@
 from pathlib import Path, PurePosixPath
-from flask import Flask, request, jsonify, send_from_directory, abort
+from flask import Flask, request, jsonify, send_from_directory, abort, has_request_context
 from flask_cors import CORS
+from werkzeug.middleware.proxy_fix import ProxyFix
 import threading
 import asyncio
 import copy
@@ -41,6 +42,7 @@ METADATA_CACHE_MAX_ENTRIES = 256
 TIMELINE_POLL_CACHE_TTL = 25
 
 app = Flask(__name__)
+app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
 app.config["MAX_CONTENT_LENGTH"] = MAX_REQUEST_BYTES
 LOCAL_CORS_ORIGINS = [
     "http://127.0.0.1:4000",
@@ -114,6 +116,8 @@ def _misskey_headers(extra=None):
         "Accept": "application/json, text/plain, */*",
         "Origin": f"https://{MSK_HOST}",
     }
+    if has_request_context() and request.remote_addr:
+        headers["X-Forwarded-For"] = request.remote_addr
     if extra:
         headers.update(extra)
     return headers
@@ -1006,6 +1010,8 @@ def list_usable(token):
         "Accept": "application/json, text/plain, */*",
         "Origin": f"https://{MSK_HOST}",
     }
+    if has_request_context() and request.remote_addr:
+        headers["X-Forwarded-For"] = request.remote_addr
     try:
         resp = _http_post(url, json=payload, headers=headers, timeout=30)
         resp.raise_for_status()
@@ -1288,6 +1294,8 @@ def _send_to_misskey(text, token, file_id=None):
         "Origin": f"https://{MSK_HOST}",
         "Referer": f"https://{MSK_HOST}/chat/agent/{session_id}"
     }
+    if has_request_context() and request.remote_addr:
+        headers["X-Forwarded-For"] = request.remote_addr
     try:
         resp = _http_post(url, json=payload, headers=headers, timeout=120)
         if resp.status_code in (200, 201):
@@ -1487,6 +1495,7 @@ def upload_image():
                 "User-Agent": "Aliya Web/1.0",
                 "Accept": "application/json, text/plain, */*",
                 "Origin": f"https://{MSK_HOST}",
+                **({"X-Forwarded-For": request.remote_addr} if has_request_context() and request.remote_addr else {}),
             },
             timeout=60,
         )
