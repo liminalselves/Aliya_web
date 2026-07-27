@@ -11,7 +11,7 @@
 
     <script src="js/loading.js" defer></script>
     <script src="js/message-renderer.js" defer></script>
-    <script src="js/index.js?v=20260722-04" defer></script>
+    <script src="js/index.js?v=20260727-01" defer></script>
 
     <!-- 音乐引用 -->
     <audio src="audio/开关.wav" id="buttonbgm" preload="auto"></audio>
@@ -472,6 +472,16 @@
                     <option value="tranquil-repose">Tranquil Repose</option>
                 </select>
                 <div class="op-caption">切换后立即生效，选择“不播放”可关闭背景音乐。</div>
+            </div>
+
+            <div class="op-section">
+                <label class="op-label" for="playModeSelect">播放模式</label>
+                <select id="playModeSelect" class="settings-input settings-select">
+                    <option value="single">单曲循环</option>
+                    <option value="random">随机播放</option>
+                    <option value="list">列表循环</option>
+                </select>
+                <div class="op-caption">单曲循环时播放上方选中的曲目；随机播放/列表循环时以全部曲目为播放池。</div>
             </div>
 
             <div class="op-status" id="settingsStatus"></div>

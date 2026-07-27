@@ -145,6 +145,7 @@ document.addEventListener("DOMContentLoaded", function (event) {
     var Litterbgm = document.getElementById("Litterbgm")
     const radioButton = document.querySelector('#radio-button');
     const backgroundMusicStorageKey = "aliya_background_music";
+    const playModeStorageKey = "aliya_background_music_mode";
     const backgroundMusicSources = {
         letter: "audio/music/letter.mp3",
         aliya: "audio/music/aliya.mp3",
@@ -154,7 +155,9 @@ document.addEventListener("DOMContentLoaded", function (event) {
         "stars-annihilation": "audio/music/stars-annihilation.mp3",
         "tranquil-repose": "audio/music/tranquil-repose.mp3"
     };
+    var backgroundMusicKeys = Object.keys(backgroundMusicSources);
     var activeBackgroundMusic = "letter";
+    var activePlayMode = "single";
 
     function safePlay(audio) {
         if (!audio) return;
@@ -180,6 +183,7 @@ document.addEventListener("DOMContentLoaded", function (event) {
                 mainbgm.src = nextSource;
                 mainbgm.load();
             }
+            mainbgm.loop = activePlayMode === "single";
             if (playNow && !radioButton.checked) safePlay(mainbgm);
         } else {
             mainbgm.removeAttribute("src");
@@ -191,7 +195,39 @@ document.addEventListener("DOMContentLoaded", function (event) {
         if (activeBackgroundMusic !== "none") safePlay(mainbgm);
     }
 
+    function applyPlayMode(mode) {
+        activePlayMode = (mode === "single" || mode === "random" || mode === "list") ? mode : "single";
+        localStorage.setItem(playModeStorageKey, activePlayMode);
+        if (mainbgm) {
+            mainbgm.loop = activePlayMode === "single";
+        }
+    }
+
+    function playNextInList() {
+        var currentIdx = backgroundMusicKeys.indexOf(activeBackgroundMusic);
+        var nextIdx = currentIdx === -1 || currentIdx >= backgroundMusicKeys.length - 1 ? 0 : currentIdx + 1;
+        var nextKey = backgroundMusicKeys[nextIdx];
+        applyBackgroundMusic(nextKey, true);
+    }
+
+    function playNextRandom() {
+        var nextKey = backgroundMusicKeys[Math.floor(Math.random() * backgroundMusicKeys.length)];
+        applyBackgroundMusic(nextKey, true);
+    }
+
+    function handleMusicEnded() {
+        if (activeBackgroundMusic === "none") return;
+        if (activePlayMode === "random") playNextRandom();
+        else if (activePlayMode === "list") playNextInList();
+    }
+
+    if (mainbgm) {
+        mainbgm.addEventListener("ended", handleMusicEnded);
+    }
+
     var savedBackgroundMusic = localStorage.getItem(backgroundMusicStorageKey) || "letter";
+    var savedPlayMode = localStorage.getItem(playModeStorageKey) || "single";
+    applyPlayMode(savedPlayMode);
     applyBackgroundMusic(savedBackgroundMusic, false);
 
     function setRem() {
@@ -1814,11 +1850,13 @@ document.addEventListener("DOMContentLoaded", function (event) {
     var settingsStatus = document.getElementById("settingsStatus");
     var segTokenInput = document.getElementById("segToken");
     var backgroundMusicSelect = document.getElementById("backgroundMusicSelect");
+    var playModeSelect = document.getElementById("playModeSelect");
 
     function openSettingsPanel() {
         segTokenInput.value = "";
         segTokenInput.placeholder = mskToken ? "留空保持当前 Token" : "Misskey API Token";
         if (backgroundMusicSelect) backgroundMusicSelect.value = activeBackgroundMusic;
+        if (playModeSelect) playModeSelect.value = activePlayMode;
         settingsOverlay.classList.add("active");
         settingsStatus.textContent = "";
         settingsStatus.className = "op-status";
@@ -1837,6 +1875,15 @@ document.addEventListener("DOMContentLoaded", function (event) {
         backgroundMusicSelect.value = activeBackgroundMusic;
         backgroundMusicSelect.addEventListener("change", function() {
             applyBackgroundMusic(this.value, true);
+        });
+    }
+    if (playModeSelect) {
+        playModeSelect.value = activePlayMode;
+        playModeSelect.addEventListener("change", function() {
+            applyPlayMode(this.value);
+            if (activePlayMode !== "single" && activeBackgroundMusic !== "none" && !radioButton.checked) {
+                playBackgroundMusic();
+            }
         });
     }
 
