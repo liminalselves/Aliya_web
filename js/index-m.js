@@ -1515,6 +1515,9 @@ document.addEventListener("DOMContentLoaded", function (event) {
     }
 
     async function applyTimelineSnapshot(data, scrollToLatest) {
+        // 锁定本次快照所属会话：循环里的 await processDrawingInstruction 期间，
+        // 用户可能已切换到其它会话；若继续写入会把旧会话数据覆盖到新会话 DOM。
+        var snapshotSessionId = currentSessionId;
         var renderedMessages = [];
         var hrProcessed = false;
 
@@ -1548,6 +1551,9 @@ document.addEventListener("DOMContentLoaded", function (event) {
                 proactiveScheduleControlFailed: msg.proactiveScheduleControlFailed === true
             });
         }
+
+        // 用户中途切到其它会话，丢弃本次快照，避免旧会话消息覆盖新会话聊天区。
+        if (snapshotSessionId !== currentSessionId) return;
 
         earliestMsgId = null;
         noMoreHistory = data.length < 30;
@@ -1652,6 +1658,7 @@ document.addEventListener("DOMContentLoaded", function (event) {
     // 将历史消息合并进完整时间线后统一重渲染，确保日期分隔和消息元信息连续。
     async function prependMessages(messages) {
         // messages 是降序（最新→最旧），通过 unshift 整理为最旧→最新。
+        var prependSessionId = currentSessionId;
         var preparedMessages = [];
         for (var i = 0; i < messages.length; i++) {
             var msg = messages[i];
@@ -1685,6 +1692,8 @@ document.addEventListener("DOMContentLoaded", function (event) {
                 });
             }
         }
+        // 用户中途切到其它会话，丢弃本次 prepend，避免把旧会话历史插到新会话聊天区。
+        if (prependSessionId !== currentSessionId) return;
         timelineRenderedItems = preparedMessages.concat(timelineRenderedItems);
         timelineRenderedSessionId = currentSessionId;
         renderPreparedTimelineMessages(timelineRenderedItems, false);
