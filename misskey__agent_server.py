@@ -107,7 +107,7 @@ class StyleEnforcementError(RuntimeError):
     pass
 
 
-_TRUSTED_PROXIES = set(os.environ.get("ALIYA_TRUSTED_PROXIES", "127.0.0.1,::1").split(","))
+_TRUSTED_PROXIES = set(os.environ.get("ALIYA_TRUSTED_PROXIES", "127.0.0.1,::1,8.134.134.231").split(","))
 
 
 def _client_ip():
