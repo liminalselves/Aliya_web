@@ -940,6 +940,7 @@ document.addEventListener("DOMContentLoaded", function (event) {
     var timelineSnapshotMessageIds = {};
     var timelineRenderedItems = [];
     var timelineRenderedSessionId = null;
+    var sendInFlight = false;
 
     function stopPolling() {
         if (pollTimer) {
@@ -950,7 +951,7 @@ document.addEventListener("DOMContentLoaded", function (event) {
 
     function pollDelayMs() {
         if (document.hidden) return 10000;
-        return isWaitingReply ? 1500 : 3000;
+        return isWaitingReply ? 2500 : 3000;
     }
 
     function scheduleNextPoll(delay) {
@@ -1522,6 +1523,9 @@ document.addEventListener("DOMContentLoaded", function (event) {
     }
 
     async function applyTimelineSnapshot(data, scrollToLatest) {
+        // 锁定本次快照所属会话：循环里的 await processDrawingInstruction 期间，
+        // 用户可能已切换到其它会话；若继续写入会把旧会话数据覆盖到新会话 DOM。
+        var snapshotSessionId = currentSessionId;
         var renderedMessages = [];
         var hrProcessed = false;
 
@@ -1556,6 +1560,9 @@ document.addEventListener("DOMContentLoaded", function (event) {
             });
         }
 
+        // 用户中途切到其它会话，丢弃本次快照，避免旧会话消息覆盖新会话聊天区。
+        if (snapshotSessionId !== currentSessionId) return;
+
         earliestMsgId = null;
         noMoreHistory = data.length < 30;
         timelineRenderedItems = renderedMessages.slice();
@@ -1570,6 +1577,13 @@ document.addEventListener("DOMContentLoaded", function (event) {
         });
         timelineSnapshotSignature = buildTimelineSnapshotSignature(data);
     }
+
+    // [DEPRECATED] 增量渲染轮询拿到的新消息，避免清空 DOM 重渲染导致闪烁，同时保留新 al 消息的逐句分段延迟。
+    // 该机制因为与实时的 sendMessage() 产生严重的并发竞争、状态交错以及防重匹配困难被废弃。
+    // 恢复到原有的稳定模式：平时只做 append 增量，会话切换才做全量 snapshot。
+    /* 
+    async function applyTimelineSnapshotIncremental(data, scrollToLatest) { ... }
+    */
 
     // 初始化拉取消息（通过 timeline 端点，type=new）
     async function fetchInitialMessages() {
@@ -1659,6 +1673,7 @@ document.addEventListener("DOMContentLoaded", function (event) {
     // 将历史消息合并进完整时间线后统一重渲染，确保日期分隔和消息元信息连续。
     async function prependMessages(messages) {
         // messages 是降序（最新→最旧），通过 unshift 整理为最旧→最新。
+        var prependSessionId = currentSessionId;
         var preparedMessages = [];
         for (var i = 0; i < messages.length; i++) {
             var msg = messages[i];
@@ -1692,6 +1707,8 @@ document.addEventListener("DOMContentLoaded", function (event) {
                 });
             }
         }
+        // 用户中途切到其它会话，丢弃本次 prepend，避免把旧会话历史插到新会话聊天区。
+        if (prependSessionId !== currentSessionId) return;
         timelineRenderedItems = preparedMessages.concat(timelineRenderedItems);
         timelineRenderedSessionId = currentSessionId;
         renderPreparedTimelineMessages(timelineRenderedItems, false);
@@ -1731,7 +1748,7 @@ document.addEventListener("DOMContentLoaded", function (event) {
         }
     }
 
-    // 【修复】轮询消息时，无论是否有 msk_msg_id，都强制清理提示词
+    // 轮询消息，回归到稳定版本中的简单增量追加逻辑。
     async function pollMessages() {
         if (pollInFlight || !mskToken) return;
         pollInFlight = true;
@@ -1746,34 +1763,66 @@ document.addEventListener("DOMContentLoaded", function (event) {
             if (data.snapshot === true && Array.isArray(data.messages)) {
                 // 会话切换期间可能有旧请求返回，不能用旧会话覆盖当前聊天区。
                 if (data.session_id && data.session_id !== currentSessionId) return;
+                // [DEPRECATED] 复杂的快照比对与增量更新：废弃，改用下面的简单增量追加。
+                /*
                 var snapshotSignature = buildTimelineSnapshotSignature(data.messages);
                 if (snapshotSignature !== timelineSnapshotSignature) {
                     var hasNewAssistant = data.messages.some(function(msg) {
                         return msg && msg.role === "assistant" && msg.id && !timelineSnapshotMessageIds[msg.id];
                     });
-                    // 分段播放进行中，绝不中断（保护逐段动画效果）
-                    if (segmentPlaybackTimers.length > 0) {
-                        timelineSnapshotSignature = snapshotSignature;
-                        timelineSnapshotMessageIds = {};
-                        data.messages.forEach(function(msg) {
-                            if (msg && msg.id) timelineSnapshotMessageIds[msg.id] = true;
-                        });
-                        return;
+                    await applyTimelineSnapshotIncremental(data.messages, isAtBottomFlag);
+                    if (!sendInFlight) {
+                        recentlySentSet = {};
+                        recentlyReceivedSet = {};
+                        if (hasNewAssistant && isWaitingReply) setWaiting(false);
                     }
-                    // 等待回复期间，若快照未新增 AI 回复，跳过重渲染避免用户气泡闪烁
-                    if (isWaitingReply && !hasNewAssistant) {
-                        timelineSnapshotSignature = snapshotSignature;
-                        timelineSnapshotMessageIds = {};
-                        data.messages.forEach(function(msg) {
-                            if (msg && msg.id) timelineSnapshotMessageIds[msg.id] = true;
-                        });
-                        return;
-                    }
-                    await applyTimelineSnapshot(data.messages, isAtBottomFlag);
-                    recentlySentSet = {};
-                    recentlyReceivedSet = {};
-                    if (hasNewAssistant && isWaitingReply) setWaiting(false);
                 }
+                */
+                // 恢复稳定版逻辑：如果后端返回了 snapshot，我们只从中提取 id > lastMsgId 的消息进行追加。
+                // 这避免了与 sendMessage 在时间线上的状态竞争。
+                var snapshotSessionId = currentSessionId;
+                var appendedAny = false;
+                var appendedAssistant = false;
+                for (var i = 0; i < data.messages.length; i++) {
+                    var m = data.messages[i];
+                    if (!m || !m.id || m.id <= lastMsgId) continue;
+                    // 跳过防重集合中的消息（这些是 sendMessage 本地刚加进 DOM 的）
+                    if (m.role === "player" && recentlySentSet[m.content]) {
+                        lastMsgId = m.id;
+                        delete recentlySentSet[m.content];
+                        continue;
+                    }
+                    if (m.role === "aliya" && recentlyReceivedSet[m.content]) {
+                        lastMsgId = m.id;
+                        delete recentlyReceivedSet[m.content];
+                        continue;
+                    }
+                    // 429 限流提示：渲染为一条 AI 消息，但不推进游标、不计入上下文。
+                    if (m._rate_limit_hint === true) {
+                        renderAliyaMessage(m.content, [], false, { timestamp: m.createdAt || null });
+                        continue;
+                    }
+                    // 走到这里说明这是真实的新消息
+                    if (m.role === "aliya") {
+                        var processed = await processDrawingInstruction(m.content, m.id);
+                        var hrResult = processHeartRateInstruction(processed.text);
+                        if (!hrResult.matched) {
+                            currentRange = ranges.medium;
+                            updateDisplay();
+                        }
+                        renderAliyaMessage(hrResult.text, timelineAttachmentImageUrls(m.file).concat(processed.images), false, {
+                            timestamp: m.createdAt || m.timestamp || null,
+                            proactiveScheduleActionTypes: m.proactiveScheduleActionTypes || m.proactive_schedule_action_types || [],
+                            proactiveScheduleControlFailed: m.proactiveScheduleControlFailed === true || m.proactive_schedule_control_failed === true
+                        });
+                        appendedAssistant = true;
+                    } else if (m.role === "player" || m.role === "user") {
+                        appendMessage("player", m.content, m.createdAt || m.timestamp || null, timelineAttachmentImageUrls(m.file));
+                    }
+                    lastMsgId = m.id;
+                    appendedAny = true;
+                }
+                if (appendedAssistant && isWaitingReply) setWaiting(false);
                 return;
             }
             if (data.messages && data.messages.length > 0) {
@@ -1836,6 +1885,7 @@ document.addEventListener("DOMContentLoaded", function (event) {
         if (!content && !file) return;
         // 纯图片消息只显示媒体卡片，和 MSK 原生聊天保持一致。
         var displayContent = content;
+        var targetSessionId = currentSessionId;
         var playerTimestamp = new Date().toISOString();
         var localPreviewImages = file ? [URL.createObjectURL(file)] : [];
         appendLiveTimelineDateDivider(playerTimestamp);
@@ -1848,7 +1898,7 @@ document.addEventListener("DOMContentLoaded", function (event) {
         }
         setWaiting(true, file ? "正在上传图片..." : "正在发送...");
         recentlySentSet[displayContent] = true;
-        setTimeout(function () { delete recentlySentSet[displayContent]; }, 8000);
+        sendInFlight = true;
         try {
             await opWaitForPendingConfigSaves();
             var fileId = file ? await uploadSelectedImage(file) : null;
@@ -1858,15 +1908,17 @@ document.addEventListener("DOMContentLoaded", function (event) {
             var res = await fetch(API_BASE + "/api/chat", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: makeBody({ message: content, file_id: fileId }),
+                body: makeBody({ message: content, file_id: fileId, session_id: targetSessionId }),
                 signal: controller.signal
             });
             clearTimeout(timeoutId);
             var data = await res.json();
-            if (await guardAuthResponse(res, data)) { setWaiting(false); return; }
+            if (await guardAuthResponse(res, data)) { return; }
             if (data.status === "success" && data.assistant_message !== undefined) {
                 var rawText = data.assistant_message;
                 var msgId = data.assistant_message_id;
+                // 恢复稳定版逻辑：不再依赖 timelineSnapshotMessageIds 这种复杂的快照比对。
+                // 只要后端返回了，我们就直接渲染。如果 poll 抢先拉到了，poll 里的 recentlyReceivedSet 会跳过它。
                 var processed = await processDrawingInstruction(rawText, msgId);
                 var hrResult = processHeartRateInstruction(processed.text);
                 if (!hrResult.matched) {
@@ -1889,12 +1941,7 @@ document.addEventListener("DOMContentLoaded", function (event) {
                     assistantMeta.proactiveScheduleActionTypes,
                     assistantMeta.proactiveScheduleControlFailed
                 );
-                var playbackMs = renderAliyaMessage(hrResult.text, processed.images, false, assistantMeta);
-                if (playbackMs > 0) {
-                    scheduleSegmentPlayback(function() { setWaiting(false); }, playbackMs + 100);
-                } else {
-                    setWaiting(false);
-                }
+                renderAliyaMessage(hrResult.text, processed.images, false, assistantMeta);
                 recentlyReceivedSet[rawText] = true;
                 setTimeout(function () { delete recentlyReceivedSet[rawText]; }, 10000);
             } else if (data.status === "error") {
@@ -1903,7 +1950,6 @@ document.addEventListener("DOMContentLoaded", function (event) {
                 appendLiveTimelineDateDivider(errorTimestamp);
                 rememberTimelineItem("aliya", errorReply, [], null, errorTimestamp);
                 appendMessage("aliya", errorReply, errorTimestamp);
-                setWaiting(false);
             }
         } catch (err) {
             console.log("发送消息失败：", err);
@@ -1911,7 +1957,12 @@ document.addEventListener("DOMContentLoaded", function (event) {
             appendLiveTimelineDateDivider(failureTimestamp);
             rememberTimelineItem("aliya", "通信故障，请稍后再试", [], null, failureTimestamp);
             appendMessage("aliya", "通信故障，请稍后再试", failureTimestamp);
+        } finally {
+            sendInFlight = false;
             setWaiting(false);
+            // 不能立即删除防重标记：服务端时间线缓存会延迟 poll 看到本条消息，
+            // 正常由 poll 跳过分支删除，这里仅做兜底清理。
+            setTimeout(function () { delete recentlySentSet[displayContent]; }, 15000);
         }
     }
 

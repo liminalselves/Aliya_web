@@ -476,6 +476,79 @@ def frontend_file(filename):
     abort(404)
 
 #消息存储
+_RATE_LIMIT_HINT_TEXT = "刚刚聊的有点累了，休息一下马上恢复～"
+_RATE_LIMIT_LOCKOUT_SECONDS = 30
+_RATE_LIMIT_HINT_COOLDOWN_SECONDS = 60
+_rate_limit_state = {}  # (namespace, token) -> {"locked_until": float, "last_hint_at": float}
+_rate_limit_lock = threading.Lock()
+
+
+def _is_rate_limit_response(response):
+    """检测 MSK 响应是否为速率限制。"""
+    if response is None or response.status_code != 429:
+        return False
+    try:
+        body = response.json()
+    except ValueError:
+        return False
+    if not isinstance(body, dict):
+        return False
+    error = body.get("error")
+    if isinstance(error, dict):
+        return error.get("code") == "RATE_LIMIT_EXCEEDED" or error.get("kind") == "client"
+    return False
+
+
+def _is_rate_limit_locked(namespace, token):
+    """是否仍处在限流锁定期内；锁内不再调用"""
+    now = time.monotonic()
+    key = (namespace, _token_fingerprint(token))
+    with _rate_limit_lock:
+        state = _rate_limit_state.get(key)
+        return bool(state and state["locked_until"] > now)
+
+
+def _record_rate_limit(namespace, token):
+    """被 MSK 限流后调用：刷新锁状态，并返回一条提示消息（None 表示不该再注入）。"""
+    now = time.monotonic()
+    key = (namespace, _token_fingerprint(token))
+    with _rate_limit_lock:
+        state = _rate_limit_state.get(key)
+        if state and state["locked_until"] > now:
+            # 已在锁内：按冷却决定是否再提示，避免刷屏。
+            if now - state["last_hint_at"] < _RATE_LIMIT_HINT_COOLDOWN_SECONDS:
+                return None
+            state["last_hint_at"] = now
+            return _rate_limit_hint_message(namespace)
+        _rate_limit_state[key] = {
+            "locked_until": now + _RATE_LIMIT_LOCKOUT_SECONDS,
+            "last_hint_at": now,
+        }
+        return _rate_limit_hint_message(namespace)
+
+
+def _rate_limit_hint_message(namespace):
+    """构造提示消息"""
+    return {
+        "id": f"rate_limit_hint:{namespace}:{int(time.time() * 1000)}",
+        "role": "assistant",
+        "content": _RATE_LIMIT_HINT_TEXT,
+        "createdAt": None,
+        "file": None,
+        "imageRecognitionStatus": None,
+        "imageRecognitionDescription": None,
+        "proactiveScheduleActionTypes": [],
+        "proactiveScheduleControlFailed": False,
+        "_rate_limit_hint": True,
+    }
+
+
+def _cleanup_rate_limit_locked(now):
+    expired = [key for key, state in _rate_limit_state.items() if state["locked_until"] <= now]
+    for key in expired:
+        _rate_limit_state.pop(key, None)
+
+
 messages_store = []
 _msg_id_counter = 0
 _lock = threading.Lock()
@@ -538,12 +611,32 @@ def poll():
     try:
         session_id = _current_or_requested_session_id(data, token)
         namespace = _timeline_cache_namespace(session_id)
-        messages = _cached_metadata(
-            namespace,
-            token,
-            TIMELINE_POLL_CACHE_TTL,
-            lambda: _timeline_messages_data(token, session_id, limit=30),
-        )
+        # 锁定期内直接返回兜底，避免在已限流的状态下继续打 MSK。
+        if _is_rate_limit_locked(namespace, token):
+            return jsonify({
+                "messages": [],
+                "session_id": session_id,
+                "snapshot": True,
+                "rate_limited": True,
+            })
+        try:
+            messages = _cached_metadata(
+                namespace,
+                token,
+                TIMELINE_POLL_CACHE_TTL,
+                lambda: _timeline_messages_data(token, session_id, limit=30),
+            )
+        except requests.exceptions.HTTPError as e:
+            if _is_rate_limit_response(getattr(e, "response", None)):
+                hint = _record_rate_limit(namespace, token)
+                logging.warning(f"轮询被 MSK 限流，已锁定 {namespace} {_RATE_LIMIT_LOCKOUT_SECONDS}s")
+                return jsonify({
+                    "messages": [hint] if hint else [],
+                    "session_id": session_id,
+                    "snapshot": True,
+                    "rate_limited": True,
+                })
+            raise
         return jsonify({
             "messages": messages,
             "session_id": session_id,
@@ -583,8 +676,16 @@ def chat():
     if not _chat_try_enter(token):
         return jsonify({"error": "上一条消息仍在处理中，请稍候再试"}), 429
     try:
-        _add_message("player", player_msg or "[图片消息]", token=token, metadata={"file_id": file_id} if file_id else None)
-        result = _send_to_misskey(player_msg, token, file_id=file_id)
+        try:
+            session_id = _current_or_requested_session_id(data, token)
+        except PermissionError as e:
+            return jsonify({"status": "error", "reply": str(e)}), 403
+        except Exception as e:
+            logging.error(f"发送消息前解析会话失败: {e}")
+            return jsonify({"status": "error", "reply": f"准备会话失败: {e}"}), 500
+        _set_cached_session_id(token, session_id)
+        _add_message("player", player_msg or "[图片消息]", token=token, metadata={"file_id": file_id} if file_id else None, session_id=session_id)
+        result = _send_to_misskey(player_msg, token, file_id=file_id, session_id=session_id)
 
         if isinstance(result, dict) and result.get("error"):
             return jsonify({
@@ -1218,7 +1319,18 @@ def timeline(data, token):
 
     try:
         session_id = _current_or_requested_session_id(data, token)
-        messages_list = _timeline_messages_data(token, session_id, limit=30, until_id=until_id)
+        namespace = _timeline_cache_namespace(session_id)
+        # 锁定期内直接返回空数组，避免在已限流的状态下继续打 MSK。
+        if _is_rate_limit_locked(namespace, token):
+            return jsonify([]), 200
+        try:
+            messages_list = _timeline_messages_data(token, session_id, limit=30, until_id=until_id)
+        except requests.exceptions.HTTPError as e:
+            if _is_rate_limit_response(getattr(e, "response", None)):
+                _record_rate_limit(namespace, token)
+                logging.warning(f"时间线请求被 MSK 限流，已锁定 {namespace} {_RATE_LIMIT_LOCKOUT_SECONDS}s")
+                return jsonify([]), 200
+            raise
         if timeline_type == "new":
             # 防止页面刷新取得新快照后，被轮询缓存中的旧快照覆盖。
             _invalidate_metadata(_timeline_cache_namespace(session_id), token)
@@ -1315,10 +1427,11 @@ def _verify_message_delivered(token, session_id, text, attempts=4, interval=4):
     return False
 
 
-def _send_to_misskey(text, token, file_id=None):
+def _send_to_misskey(text, token, file_id=None, session_id=None):
     """通过 Misskey HTTP API 发送消息，并直接解析同步返回的response"""
     try:
-        session_id = _ensure_session_id(token)
+        if not session_id:
+            session_id = _ensure_session_id(token)
     except StyleEnforcementError as e:
         logging.error(f"发送消息前强制文风失败: {e}")
         return {"error": str(e)}
