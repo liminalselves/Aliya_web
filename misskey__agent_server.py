@@ -676,8 +676,16 @@ def chat():
     if not _chat_try_enter(token):
         return jsonify({"error": "上一条消息仍在处理中，请稍候再试"}), 429
     try:
-        _add_message("player", player_msg or "[图片消息]", token=token, metadata={"file_id": file_id} if file_id else None)
-        result = _send_to_misskey(player_msg, token, file_id=file_id)
+        try:
+            session_id = _current_or_requested_session_id(data, token)
+        except PermissionError as e:
+            return jsonify({"status": "error", "reply": str(e)}), 403
+        except Exception as e:
+            logging.error(f"发送消息前解析会话失败: {e}")
+            return jsonify({"status": "error", "reply": f"准备会话失败: {e}"}), 500
+        _set_cached_session_id(token, session_id)
+        _add_message("player", player_msg or "[图片消息]", token=token, metadata={"file_id": file_id} if file_id else None, session_id=session_id)
+        result = _send_to_misskey(player_msg, token, file_id=file_id, session_id=session_id)
 
         if isinstance(result, dict) and result.get("error"):
             return jsonify({
@@ -1387,10 +1395,11 @@ def get_config(token):
         return jsonify({"error": str(e)}), 500
 
 #Misskey通信
-def _send_to_misskey(text, token, file_id=None):
+def _send_to_misskey(text, token, file_id=None, session_id=None):
     """通过 Misskey HTTP API 发送消息，并直接解析同步返回的response"""
     try:
-        session_id = _ensure_session_id(token)
+        if not session_id:
+            session_id = _ensure_session_id(token)
     except StyleEnforcementError as e:
         logging.error(f"发送消息前强制文风失败: {e}")
         return {"error": str(e)}

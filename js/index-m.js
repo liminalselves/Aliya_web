@@ -1790,6 +1790,11 @@ document.addEventListener("DOMContentLoaded", function (event) {
                         delete recentlyReceivedSet[m.content];
                         continue;
                     }
+                    // 429 限流提示：渲染为一条 AI 消息，但不推进游标、不计入上下文。
+                    if (m._rate_limit_hint === true) {
+                        renderAliyaMessage(m.content, [], false, { timestamp: m.createdAt || null });
+                        continue;
+                    }
                     // 走到这里说明这是真实的新消息
                     if (m.role === "aliya") {
                         var processed = await processDrawingInstruction(m.content, m.id);
@@ -1873,6 +1878,7 @@ document.addEventListener("DOMContentLoaded", function (event) {
         if (!content && !file) return;
         // 纯图片消息只显示媒体卡片，和 MSK 原生聊天保持一致。
         var displayContent = content;
+        var targetSessionId = currentSessionId;
         var playerTimestamp = new Date().toISOString();
         var localPreviewImages = file ? [URL.createObjectURL(file)] : [];
         appendLiveTimelineDateDivider(playerTimestamp);
@@ -1895,7 +1901,7 @@ document.addEventListener("DOMContentLoaded", function (event) {
             var res = await fetch(API_BASE + "/api/chat", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: makeBody({ message: content, file_id: fileId }),
+                body: makeBody({ message: content, file_id: fileId, session_id: targetSessionId }),
                 signal: controller.signal
             });
             clearTimeout(timeoutId);
