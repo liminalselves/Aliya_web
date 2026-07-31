@@ -944,6 +944,7 @@ document.addEventListener("DOMContentLoaded", function (event) {
         enabled: false
     };
     var segmentPlaybackTimers = [];
+    var suppressEnterAnimation = false;
 
     function segConfigStorageKey() {
         return currentSessionId ? ("aliya_seg_config:" + currentSessionId) : "aliya_seg_config";
@@ -1136,12 +1137,13 @@ document.addEventListener("DOMContentLoaded", function (event) {
 
     // 统一的 aliya 消息渲染入口（处理分段逻辑）
     // immediate=true 时即时渲染各分段（用于历史消息），不应用延迟
+    // 返回总分段播放时长（ms），0 表示无延迟播放
     function renderAliyaMessage(cleanContent, images, immediate, messageMeta) {
         if (segConfig.enabled && cleanContent) {
             var segments = splitAssistantMessageIntoSegments(cleanContent);
             if (segments.length <= 1) {
                 appendMessage("aliya", cleanContent, messageMeta && messageMeta.timestamp, images, null, messageMeta);
-                return;
+                return 0;
             }
             var elapsed = 0;
             segments.forEach(function(seg, idx) {
@@ -1161,7 +1163,8 @@ document.addEventListener("DOMContentLoaded", function (event) {
                         appendMessage("aliya", null, null, [imgUrl]);
                     });
                 } else {
-                    var imgDelay = elapsed + 300;
+                    elapsed += 300;
+                    var imgDelay = elapsed;
                     scheduleSegmentPlayback(function() {
                         images.forEach(function(imgUrl) {
                             appendMessage("aliya", null, null, [imgUrl]);
@@ -1170,12 +1173,14 @@ document.addEventListener("DOMContentLoaded", function (event) {
                 }
             }
             if (messageMeta && (messageMeta.timestamp || messageMeta.proactiveScheduleControlFailed || (messageMeta.proactiveScheduleActionTypes || []).length)) {
-                var metaDelay = immediate ? 0 : elapsed + (images && images.length > 0 ? 300 : 0);
+                var metaDelay = immediate ? 0 : elapsed;
                 if (metaDelay > 0) scheduleSegmentPlayback(function() { appendMessageMeta("aliya", messageMeta); }, metaDelay);
                 else appendMessageMeta("aliya", messageMeta);
             }
+            return immediate ? 0 : elapsed;
         } else {
             appendMessage("aliya", cleanContent, messageMeta && messageMeta.timestamp, images, null, messageMeta);
+            return 0;
         }
     }
 
@@ -1310,14 +1315,14 @@ document.addEventListener("DOMContentLoaded", function (event) {
     function appendMessage(role, content, msgTimestamp, images, msgId, messageMeta) {
         if (content !== null && content !== undefined && String(content) !== "") {
             var li = document.createElement("li");
-            li.className = role;
+            li.className = role + (suppressEnterAnimation ? "" : " msg-enter");
             appendMessageContent(li, String(content));
             aliyaText.appendChild(li);
         }
         if (images && images.length > 0) {
             images.forEach(function(imgUrl) {
                 var li = document.createElement("li");
-                li.className = role + " image-only";
+                li.className = role + " image-only" + (suppressEnterAnimation ? "" : " msg-enter");
                 var card = document.createElement("div");
                 card.className = "image-card";
                 var img = document.createElement("img");
@@ -1416,6 +1421,7 @@ document.addEventListener("DOMContentLoaded", function (event) {
         var oldScrollTop = aliyaText.scrollTop;
         var oldScrollHeight = aliyaText.scrollHeight;
         clearSegmentPlaybackTimers();
+        suppressEnterAnimation = true;
         aliyaText.innerHTML = "";
         for (var renderedIndex = 0; renderedIndex < items.length; renderedIndex++) {
             var rendered = items[renderedIndex];
@@ -1443,6 +1449,7 @@ document.addEventListener("DOMContentLoaded", function (event) {
                 aliyaText.scrollTop = oldScrollTop + (aliyaText.scrollHeight - oldScrollHeight);
             }
         });
+        suppressEnterAnimation = false;
     }
 
     function rerenderCurrentTimelineForSegmentSetting() {
@@ -1696,6 +1703,24 @@ document.addEventListener("DOMContentLoaded", function (event) {
                     var hasNewAssistant = data.messages.some(function(msg) {
                         return msg && msg.role === "assistant" && msg.id && !timelineSnapshotMessageIds[msg.id];
                     });
+                    // 分段播放进行中，绝不中断（保护逐段动画效果）
+                    if (segmentPlaybackTimers.length > 0) {
+                        timelineSnapshotSignature = snapshotSignature;
+                        timelineSnapshotMessageIds = {};
+                        data.messages.forEach(function(msg) {
+                            if (msg && msg.id) timelineSnapshotMessageIds[msg.id] = true;
+                        });
+                        return;
+                    }
+                    // 等待回复期间，若快照未新增 AI 回复，跳过重渲染避免用户气泡闪烁
+                    if (isWaitingReply && !hasNewAssistant) {
+                        timelineSnapshotSignature = snapshotSignature;
+                        timelineSnapshotMessageIds = {};
+                        data.messages.forEach(function(msg) {
+                            if (msg && msg.id) timelineSnapshotMessageIds[msg.id] = true;
+                        });
+                        return;
+                    }
                     await applyTimelineSnapshot(data.messages, isAtBottomFlag);
                     recentlySentSet = {};
                     recentlyReceivedSet = {};
@@ -1816,8 +1841,12 @@ document.addEventListener("DOMContentLoaded", function (event) {
                     assistantMeta.proactiveScheduleActionTypes,
                     assistantMeta.proactiveScheduleControlFailed
                 );
-                renderAliyaMessage(hrResult.text, processed.images, false, assistantMeta);
-                setWaiting(false);
+                var playbackMs = renderAliyaMessage(hrResult.text, processed.images, false, assistantMeta);
+                if (playbackMs > 0) {
+                    scheduleSegmentPlayback(function() { setWaiting(false); }, playbackMs + 100);
+                } else {
+                    setWaiting(false);
+                }
                 recentlyReceivedSet[rawText] = true;
                 setTimeout(function () { delete recentlyReceivedSet[rawText]; }, 10000);
             } else if (data.status === "error") {
@@ -2685,12 +2714,31 @@ document.addEventListener("DOMContentLoaded", function (event) {
         opRenderStyles(opCurrentStyleId);
     }
 
+    function opUpdateStyleHero(selectedId) {
+        var heroValue = document.getElementById("opStyleCurrent");
+        if (!heroValue) return;
+        if (!selectedId) {
+            heroValue.textContent = "-";
+            return;
+        }
+        if (!opStyleLoaded) {
+            heroValue.textContent = "加载中…";
+            return;
+        }
+        var name = "";
+        opStyles.forEach(function(s) {
+            if (s.id === selectedId) name = s.name || s.id;
+        });
+        heroValue.textContent = name || "-";
+    }
+
     function opRenderStyles(selectedId) {
         var group = document.getElementById("cfgStyle");
         if (!group) return;
         group.innerHTML = "";
         if (opStyles.length === 0) {
             group.innerHTML = '<div class="op-image-loading"><span>暂无可选文风</span></div>';
+            opUpdateStyleHero(selectedId);
             return;
         }
         opStyles.forEach(function(style) {
@@ -2724,6 +2772,7 @@ document.addEventListener("DOMContentLoaded", function (event) {
             group.appendChild(card);
         });
         if (selectedId) opSetChoiceValue("cfgStyle", selectedId);
+        opUpdateStyleHero(selectedId || opGetChoiceValue("cfgStyle", ""));
     }
 
     function opGetChoiceValue(groupId, fallbackValue) {
@@ -2785,6 +2834,7 @@ document.addEventListener("DOMContentLoaded", function (event) {
                 });
             } else if (groupId === "cfgStyle") {
                 opQueueConfigPatch({ dialogueStyleId: nextValue });
+                opUpdateStyleHero(nextValue);
             }
         });
         opSetChoiceValue(groupId, opGetChoiceValue(groupId));
@@ -2795,15 +2845,6 @@ document.addEventListener("DOMContentLoaded", function (event) {
     opBindChoiceGroup("cfgImgSize");
     opBindChoiceGroup("cfgImgArtistPresetId");
     opBindChoiceGroup("cfgStyle");
-
-    var opStyleResetBtn = document.getElementById("opStyleResetBtn");
-    if (opStyleResetBtn) {
-        opStyleResetBtn.addEventListener("click", function() {
-            opSetChoiceValue("cfgStyle", "");
-            opCurrentStyleId = "";
-            opQueueConfigPatch({ dialogueStyleId: "" });
-        });
-    }
 
     var opVisionModelSelect = document.getElementById("cfgAgentVisionModel");
     if (opVisionModelSelect) {
@@ -2881,6 +2922,7 @@ document.addEventListener("DOMContentLoaded", function (event) {
         if (opHasOwn(patch, "dialogue_style_id")) {
             opCurrentStyleId = patch.dialogue_style_id || "";
             if (opStyleLoaded && opCurrentStyleId) opSetChoiceValue("cfgStyle", opCurrentStyleId);
+            opUpdateStyleHero(opCurrentStyleId);
         }
         if (opTimeAwarenessToggle) opTimeAwarenessToggle.disabled = opRandomProactiveEnabled || opScheduledProactiveEnabled;
         opSyncProactiveNotice();

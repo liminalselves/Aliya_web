@@ -1127,6 +1127,19 @@ def public_list(token):
                 "name": item.get("name"),
                 "summary": item.get("summary")
             })
+
+        # 兜底逻辑：若用户可用文风列表为空，自动订阅默认文风并启用
+        # （若用户已启用或选择了其他文风，则不做任何覆盖）
+        try:
+            usable_ids = _usable_style_ids(token)
+            if not usable_ids:
+                logging.info(">>> 用户可用文风列表为空，自动订阅默认文风")
+                _ensure_required_style_subscription({"dialogueStyleId": DIALOGUE_STYLE_ID}, token)
+                # 通过会话确保流程自动启用默认文风（仅在会话文风为空时生效）
+                _ensure_session_id(token, create_if_missing=False)
+        except Exception as fallback_err:
+            logging.warning(f"文风兜底逻辑执行失败（不影响列表返回）: {fallback_err}")
+
         return jsonify(styles_list), 200
     except requests.exceptions.RequestException as e:
         logging.error(f"获取广场文风列表请求异常: {e}")
@@ -1283,6 +1296,25 @@ def get_config(token):
         return jsonify({"error": str(e)}), 500
 
 #Misskey通信
+def _verify_message_delivered(token, session_id, text, attempts=4, interval=4):
+    """网关异常后验证消息是否实际送达 Misskey（轮询时间线确认）。"""
+    for _ in range(attempts):
+        time.sleep(interval)
+        try:
+            messages = _timeline_messages_data(token, session_id, limit=5)
+            for msg in messages:
+                if msg.get("role") != "user":
+                    continue
+                content = (msg.get("content") or "").strip()
+                if text and content == text.strip():
+                    return True
+                if not text and msg.get("file"):
+                    return True
+        except Exception as e:
+            logging.warning(f"验证消息送达状态失败: {e}")
+    return False
+
+
 def _send_to_misskey(text, token, file_id=None):
     """通过 Misskey HTTP API 发送消息，并直接解析同步返回的response"""
     try:
@@ -1345,7 +1377,26 @@ def _send_to_misskey(text, token, file_id=None):
             logging.info(">>> 消息已发送")
             return True
         else:
-            logging.error(f"Misskey API 返回异常 {resp.status_code}: {resp.text}")
+            # 网关类错误（502/503/504）：消息通常已送达应用层，仅回执被网关吞掉
+            if resp.status_code in (502, 503, 504):
+                logging.warning(
+                    f"Misskey 网关错误 {resp.status_code}"
+                    f"（消息大概率已送达，回执丢失）"
+                )
+                _invalidate_metadata(_timeline_cache_namespace(session_id), token)
+                _invalidate_metadata("credit_balance", token)
+                if resp.status_code == 504:
+                    # 504 = 网关等待上游超时，请求必然已到达应用层，直接信任送达
+                    logging.info(">>> 504 网关超时，消息已确认送达，等待轮询获取回复")
+                    return True
+                # 502/503 可能是上游完全不可用，需验证实际送达状态
+                logging.info(">>> 检测到网关错误，开始验证消息是否实际送达...")
+                if _verify_message_delivered(token, session_id, text or ""):
+                    logging.info(">>> 消息已确认送达 Misskey（网关回执丢失），等待轮询获取回复")
+                    return True
+                logging.error(">>> 消息送达验证失败，判定为发送失败")
+            else:
+                logging.error(f"Misskey API 返回异常 {resp.status_code}: {resp.text[:200]}")
             return False
     except requests.exceptions.Timeout:
         logging.error("发送到 Misskey 超时")

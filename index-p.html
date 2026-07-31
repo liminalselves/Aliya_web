@@ -6,12 +6,12 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Aliya</title>
     <link rel="stylesheet" href="css/base.css">
-    <link rel="stylesheet" href="css/index.css?v=20260722-04">
+    <link rel="stylesheet" href="css/index.css?v=20260730-01">
     <link rel="stylesheet" href="css/loading.css">
 
     <script src="js/loading.js" defer></script>
     <script src="js/message-renderer.js" defer></script>
-    <script src="js/index.js?v=20260727-01" defer></script>
+    <script src="js/index.js?v=20260730-01" defer></script>
 
     <!-- 音乐引用 -->
     <audio src="audio/开关.wav" id="buttonbgm" preload="auto"></audio>
@@ -401,13 +401,18 @@
             <div class="op-page" data-op-page="style">
                 <div class="op-section">
                     <label class="op-label">文风选择</label>
-                    <div class="op-choice-list" id="cfgStyle" role="group" aria-label="文风">
-                        <div class="op-image-loading">正在加载文风...</div>
+                    <div class="op-style-config">
+                        <div class="op-model-hero op-style-hero">
+                            <span class="op-hero-item">
+                                <span class="op-hero-kicker">当前文风</span>
+                                <span class="op-hero-value" id="opStyleCurrent">-</span>
+                            </span>
+                        </div>
+                        <div class="op-choice-list op-style-list" id="cfgStyle" role="group" aria-label="文风">
+                            <div class="op-image-loading">正在加载文风...</div>
+                        </div>
                     </div>
-                    <div class="op-caption">选择文风后将自动订阅并立即生效。未选择时使用默认文风。</div>
-                    <div class="op-actions op-actions-inline" style="margin-top:1.2rem">
-                        <button id="opStyleResetBtn" class="op-btn op-btn-update" type="button">恢复默认文风</button>
-                    </div>
+                    <div class="op-caption">选择文风后将自动订阅并立即生效。</div>
                 </div>
             </div>
 

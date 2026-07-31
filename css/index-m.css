@@ -313,6 +313,21 @@ body {
     margin-bottom: 5rem;
 }
 
+/* 新消息气泡入场动画 */
+@keyframes msg-bubble-enter {
+    from {
+        opacity: 0;
+        transform: translateY(12px) scale(0.97);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
+}
+.content .left li.msg-enter {
+    animation: msg-bubble-enter 0.32s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
 
 .message-rich-content {
     width: 100%;
@@ -1908,9 +1923,10 @@ body {
 
 .op-style-summary {
     color: #999;
-    font-size: 1.2rem;
-    line-height: 1.4;
-    margin-top: 0.3rem;
+    font-size: 5.8rem;
+    line-height: 1.5;
+    margin-top: 0.8rem;
+    white-space: pre-line;
     overflow-wrap: anywhere;
 }
 
@@ -1993,48 +2009,17 @@ body {
     margin-top: 2rem;
 }
 
-.op-custom-select {
-    position: relative;
-}
-
-.op-select-trigger {
+/* 文风页面 */
+.op-style-config {
     display: flex;
-    justify-content: space-between;
-    align-items: center;
-    background: #202020;
-    border: 0.2rem solid #555;
-    border-radius: 1.2rem;
-    padding: 1.8rem 2rem;
-    font-size: 7rem;
+    flex-direction: column;
+    gap: 3rem;
 }
-
-.op-select-dropdown {
-    display: none;
-    position: absolute;
-    top: 100%;
-    left: 0;
-    right: 0;
-    margin-top: 1rem;
-    background: #202020;
-    border: 0.2rem solid #555;
-    border-radius: 1.2rem;
-    max-height: 36rem;
-    overflow-y: auto;
-    z-index: 10;
+.op-style-list {
+    grid-template-columns: 1fr;
 }
-
-.op-select-dropdown.active {
-    display: block;
-}
-
-.op-select-option {
-    padding: 1.8rem 2rem;
-    font-size: 7rem;
-}
-
-.op-select-option.selected {
-    background: #4a4a4a;
-    color: #d6740b;
+.op-style-card {
+    text-align: left;
 }
 
 .op-actions {
@@ -2610,6 +2595,7 @@ body > .content,
 
 .op-model-config,
 .op-image-config,
+.op-style-config,
 .op-memory-guidance {
     gap: 12px;
 }
@@ -2633,6 +2619,7 @@ body > .content,
 .op-image-label,
 .op-config-item span,
 .op-caption,
+.op-style-summary,
 .op-session-loading,
 .op-session-empty {
     font-size: 12px;
@@ -2644,8 +2631,6 @@ body > .content,
 .op-segment-btn,
 .op-artist-card,
 .op-session-item,
-.op-select-trigger,
-.op-select-option,
 .op-btn,
 .op-status,
 .settings-toggle-row,
@@ -2679,8 +2664,7 @@ body > .content,
 
 .op-config-item input,
 .op-config-item select,
-.settings-input,
-.op-select-trigger {
+.settings-input {
     min-height: 40px;
     padding: 8px 10px;
     border-radius: 8px;
