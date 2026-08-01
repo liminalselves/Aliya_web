@@ -614,6 +614,13 @@ document.addEventListener("DOMContentLoaded", function (event) {
     }
 
     // 心率指令解析：[[heart_rate:min,max]]，允许空格
+    // 人类合理心率上限 300 bpm，下限 0（允许为0，不允许负数）
+    var HR_LIMIT_MAX = 300;
+    function clampHeartRate(val) {
+        if (isNaN(val) || val < 0) return 0;
+        if (val > HR_LIMIT_MAX) return HR_LIMIT_MAX;
+        return val;
+    }
     function processHeartRateInstruction(text) {
         var regex = /\[\[heart_rate:\s*(\d+)\s*,\s*(\d+)\s*\]\]/g;
         var cleanText = text;
@@ -621,8 +628,9 @@ document.addEventListener("DOMContentLoaded", function (event) {
         var matches = [...text.matchAll(regex)];
         for (var i = 0; i < matches.length; i++) {
             var m = matches[i];
-            var min = parseInt(m[1], 10);
-            var max = parseInt(m[2], 10);
+            var min = clampHeartRate(parseInt(m[1], 10));
+            var max = clampHeartRate(parseInt(m[2], 10));
+            if (min > max) { var tmp = min; min = max; max = tmp; }
             currentRange = { min: min, max: max };
             updateDisplay();
             cleanText = cleanText.replace(m[0], "");
