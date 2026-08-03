@@ -683,9 +683,11 @@ def chat():
         except Exception as e:
             logging.error(f"发送消息前解析会话失败: {e}")
             return jsonify({"status": "error", "reply": f"准备会话失败: {e}"}), 500
+        # client_request_id 透传给 Misskey 作幂等键，防止网络重试导致同一条消息发两次。
+        client_request_id = _string_from_json(data, "client_request_id", 64)
         _set_cached_session_id(token, session_id)
         _add_message("player", player_msg or "[图片消息]", token=token, metadata={"file_id": file_id} if file_id else None, session_id=session_id)
-        result = _send_to_misskey(player_msg, token, file_id=file_id, session_id=session_id)
+        result = _send_to_misskey(player_msg, token, file_id=file_id, session_id=session_id, client_request_id=client_request_id)
 
         if isinstance(result, dict) and result.get("error"):
             return jsonify({
@@ -698,6 +700,7 @@ def chat():
                 "reply": "消息已发送并收到回复",
                 "assistant_message": result["text"],
                 "assistant_message_id": result.get("messageId"),
+                "client_request_id": result.get("client_request_id"),
                 "image_recognition_status": result.get("imageRecognitionStatus"),
                 "image_recognition_description": result.get("imageRecognitionDescription"),
                 "proactive_schedule_action_types": result.get("proactiveScheduleActionTypes", []),
@@ -711,7 +714,7 @@ def chat():
         else:
             return jsonify({
                 "status": "error",
-                "reply": "发送到 Misskey 失败，请检查网络"
+                "reply": "与 Misskey 的连接中断，消息可能已送达。Aliya 回复后会自动显示，请勿重复发送。"
             }), 500
     finally:
         _chat_exit(token)
@@ -1427,7 +1430,7 @@ def _verify_message_delivered(token, session_id, text, attempts=4, interval=4):
     return False
 
 
-def _send_to_misskey(text, token, file_id=None, session_id=None):
+def _send_to_misskey(text, token, file_id=None, session_id=None, client_request_id=None):
     """通过 Misskey HTTP API 发送消息，并直接解析同步返回的response"""
     try:
         if not session_id:
@@ -1443,7 +1446,7 @@ def _send_to_misskey(text, token, file_id=None, session_id=None):
         "i": token,
         "sessionId": session_id,
         "text": text or "",
-        "clientRequestId": str(uuid.uuid4())
+        "clientRequestId": client_request_id or str(uuid.uuid4())
     }
     if file_id:
         payload["fileId"] = file_id
@@ -1477,10 +1480,10 @@ def _send_to_misskey(text, token, file_id=None, session_id=None):
                 if assistant_text:
                     logging.info("<<< 已收到 Misskey 同步回复")
                     _add_message("aliya", assistant_text, msk_msg_id=assistant_msg_id, token=token, metadata=metadata, session_id=session_id)
-                    return {"text": assistant_text, "messageId": assistant_msg_id, **metadata}
+                    return {"text": assistant_text, "messageId": assistant_msg_id, "client_request_id": client_request_id, **metadata}
                 else:
                     logging.warning("API 返回成功，但未找到 assistantText 字段")
-                    return {"text": "", "messageId": assistant_msg_id, **metadata}
+                    return {"text": "", "messageId": assistant_msg_id, "client_request_id": client_request_id, **metadata}
             except ValueError:
                 logging.error("API 返回的不是有效的 JSON 格式")
                 return True

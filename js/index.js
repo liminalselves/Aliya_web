@@ -1746,13 +1746,16 @@ document.addEventListener("DOMContentLoaded", function (event) {
                 for (var i = 0; i < data.messages.length; i++) {
                     var m = data.messages[i];
                     if (!m || !m.id || m.id <= lastMsgId) continue;
+                    // Misskey 时间线返回的 role 是 user/assistant，而本地消息存储用的是 player/aliya。
+                    // 统一映射后再比较，否则防重判断永远不命中，导致用户消息被 poll 重复渲染。
+                    var mRole = m.role === "user" ? "player" : (m.role === "assistant" ? "aliya" : m.role);
                     // 跳过防重集合中的消息（这些是 sendMessage 本地刚加进 DOM 的）
-                    if (m.role === "player" && recentlySentSet[m.content]) {
+                    if (mRole === "player" && recentlySentSet[m.content]) {
                         lastMsgId = m.id;
                         delete recentlySentSet[m.content];
                         continue;
                     }
-                    if (m.role === "aliya" && recentlyReceivedSet[m.content]) {
+                    if (mRole === "aliya" && recentlyReceivedSet[m.content]) {
                         lastMsgId = m.id;
                         delete recentlyReceivedSet[m.content];
                         continue;
@@ -1763,7 +1766,7 @@ document.addEventListener("DOMContentLoaded", function (event) {
                         continue;
                     }
                     // 走到这里说明这是真实的新消息
-                    if (m.role === "aliya") {
+                    if (mRole === "aliya") {
                         var processed = await processDrawingInstruction(m.content, m.id);
                         var hrResult = processHeartRateInstruction(processed.text);
                         if (!hrResult.matched) {
@@ -1775,8 +1778,13 @@ document.addEventListener("DOMContentLoaded", function (event) {
                             proactiveScheduleActionTypes: m.proactiveScheduleActionTypes || m.proactive_schedule_action_types || [],
                             proactiveScheduleControlFailed: m.proactiveScheduleControlFailed === true || m.proactive_schedule_control_failed === true
                         });
+                        // 用 IIFE 捕获本条消息内容，避免 var 循环变量被 setTimeout 闭包引用到最后一条消息。
+                        (function (contentKey) {
+                            recentlyReceivedSet[contentKey] = true;
+                            setTimeout(function() { delete recentlyReceivedSet[contentKey]; }, 10000);
+                        })(m.content);
                         appendedAssistant = true;
-                    } else if (m.role === "player" || m.role === "user") {
+                    } else if (mRole === "player") {
                         appendMessage("player", m.content, m.createdAt || m.timestamp || null, timelineAttachmentImageUrls(m.file));
                     }
                     lastMsgId = m.id;
@@ -1788,17 +1796,19 @@ document.addEventListener("DOMContentLoaded", function (event) {
             if (data.messages && data.messages.length > 0) {
                 for (var i = 0; i < data.messages.length; i++) {
                     var msg = data.messages[i];
-                    if (msg.role === "player" && recentlySentSet[msg.content]) {
+                    var msgRole = msg.role === "user" ? "player" : (msg.role === "assistant" ? "aliya" : msg.role);
+                    if (msgRole === "player" && recentlySentSet[msg.content]) {
                         if (msg.id > lastMsgId) lastMsgId = msg.id;
+                        delete recentlySentSet[msg.content];
                         continue;
                     }
-                    if (msg.role === "aliya" && recentlyReceivedSet[msg.content]) {
+                    if (msgRole === "aliya" && recentlyReceivedSet[msg.content]) {
                         if (msg.id > lastMsgId) lastMsgId = msg.id;
                         delete recentlyReceivedSet[msg.content];
                         continue;
                     }
                     
-                    if (msg.role === "aliya") {
+                    if (msgRole === "aliya") {
                         var processed = await processDrawingInstruction(msg.content, msg.msk_msg_id);
                         var hrResult = processHeartRateInstruction(processed.text);
                         if (!hrResult.matched) {
@@ -1811,12 +1821,16 @@ document.addEventListener("DOMContentLoaded", function (event) {
                             proactiveScheduleActionTypes: msg.proactiveScheduleActionTypes || msg.proactive_schedule_action_types || [],
                             proactiveScheduleControlFailed: msg.proactiveScheduleControlFailed === true || msg.proactive_schedule_control_failed === true
                         });
+                        (function (contentKey) {
+                            recentlyReceivedSet[contentKey] = true;
+                            setTimeout(function() { delete recentlyReceivedSet[contentKey]; }, 10000);
+                        })(msg.content);
                     } else {
-                        appendMessage(msg.role, msg.content, msg.createdAt || msg.timestamp || null, timelineAttachmentImageUrls(msg.file));
+                        appendMessage(msgRole, msg.content, msg.createdAt || msg.timestamp || null, timelineAttachmentImageUrls(msg.file));
                     }
                     
                     if (msg.id > lastMsgId) lastMsgId = msg.id;
-                    if (msg.role === "aliya" && isWaitingReply) { setWaiting(false); }
+                    if (msgRole === "aliya" && isWaitingReply) { setWaiting(false); }
                 }
             }
         } catch (err) {
@@ -1840,6 +1854,7 @@ document.addEventListener("DOMContentLoaded", function (event) {
     }
 
     async function sendMessage() {
+        if (sendInFlight) return;
         var content = playerInput.value.trim();
         var file = imageInput && imageInput.files && imageInput.files[0];
         if (!content && !file) return;
@@ -1848,6 +1863,7 @@ document.addEventListener("DOMContentLoaded", function (event) {
         var targetSessionId = currentSessionId;
         var playerTimestamp = new Date().toISOString();
         var localPreviewImages = file ? [URL.createObjectURL(file)] : [];
+        var clientRequestId = (typeof crypto !== "undefined" && crypto.randomUUID) ? crypto.randomUUID() : String(Date.now()) + Math.random().toString(36).slice(2);
         appendLiveTimelineDateDivider(playerTimestamp);
         appendMessage("player", displayContent, playerTimestamp, localPreviewImages);
         rememberTimelineItem("player", displayContent, localPreviewImages, null, playerTimestamp);
@@ -1868,7 +1884,7 @@ document.addEventListener("DOMContentLoaded", function (event) {
             var res = await fetch(API_BASE + "/api/chat", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: makeBody({ message: content, file_id: fileId, session_id: targetSessionId }),
+                body: makeBody({ message: content, file_id: fileId, session_id: targetSessionId, client_request_id: clientRequestId }),
                 signal: controller.signal
             });
             clearTimeout(timeoutId);
@@ -1901,7 +1917,9 @@ document.addEventListener("DOMContentLoaded", function (event) {
                     assistantMeta.proactiveScheduleActionTypes,
                     assistantMeta.proactiveScheduleControlFailed
                 );
-                renderAliyaMessage(hrResult.text, processed.images, false, assistantMeta);
+                if (!recentlyReceivedSet[rawText]) {
+                    renderAliyaMessage(hrResult.text, processed.images, false, assistantMeta);
+                }
                 recentlyReceivedSet[rawText] = true;
                 setTimeout(function () { delete recentlyReceivedSet[rawText]; }, 10000);
             } else if (data.status === "error") {
@@ -1913,16 +1931,23 @@ document.addEventListener("DOMContentLoaded", function (event) {
             }
         } catch (err) {
             console.log("发送消息失败：", err);
+            // 走到这里时请求体通常已发出（切后台断连、等待超时等），消息大概率已送达 Misskey，
+            // 提示用户回复会自动出现，避免误以为发送失败而重复发送。
+            var failureTip = err && err.name === "AbortError"
+                ? "连接中断（可能切到了后台或等待超时）。消息大概率已发出，Aliya 回复后会自动显示，无需重发。"
+                : "网络波动导致请求中断。消息大概率已发出，Aliya 回复后会自动显示，请勿重复发送。";
             var failureTimestamp = new Date().toISOString();
             appendLiveTimelineDateDivider(failureTimestamp);
-            rememberTimelineItem("aliya", "通信故障，请稍后再试", [], null, failureTimestamp);
-            appendMessage("aliya", "通信故障，请稍后再试", failureTimestamp);
+            rememberTimelineItem("aliya", failureTip, [], null, failureTimestamp);
+            appendMessage("aliya", failureTip, failureTimestamp);
         } finally {
             sendInFlight = false;
             setWaiting(false);
             // 不能立即删除防重标记：服务端时间线缓存会延迟 poll 看到本条消息，
             // 正常由 poll 跳过分支删除，这里仅做兜底清理。
-            setTimeout(function () { delete recentlySentSet[displayContent]; }, 15000);
+            // 兜底窗口必须足够长（5分钟）：移动端后台会冻结定时器，且时间线缓存
+            // 可能延迟数十秒才首次带上本条消息，过早清理会导致消息被 poll 重复渲染。
+            setTimeout(function () { delete recentlySentSet[displayContent]; }, 300000);
         }
     }
 
