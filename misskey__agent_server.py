@@ -689,6 +689,28 @@ def chat():
         _add_message("player", player_msg or "[图片消息]", token=token, metadata={"file_id": file_id} if file_id else None, session_id=session_id)
         result = _send_to_misskey(player_msg, token, file_id=file_id, session_id=session_id, client_request_id=client_request_id)
 
+        if isinstance(result, dict) and result.get("banned"):
+            if result.get("code") == "AGENT_CHARACTER_MODERATION_BANNED":
+                warning = "该角色已被管理员停用，无法继续对话。"
+            else:
+                warning = "该会话因违规已被封禁，无法继续发送消息。请遵守平台守则否则将面临严重处罚。如有疑问请联系管理员。"
+            return jsonify({
+                "status": "error",
+                "reply": warning,
+                "session_banned": True,
+            })
+        if isinstance(result, dict) and result.get("audit_blocked"):
+            category = result.get("auditCategory")
+            reason = result.get("auditReason")
+            detail = reason or category
+            warning = f"消息被内容审核拦截{('：' + detail) if detail else ''}。该消息不会保留，也不会产生回复，请遵守平台规则。"
+            return jsonify({
+                "status": "error",
+                "reply": warning,
+                "audit_blocked": True,
+                "audit_category": category,
+                "audit_reason": reason,
+            })
         if isinstance(result, dict) and result.get("error"):
             return jsonify({
                 "status": "error",
@@ -1469,6 +1491,14 @@ def _send_to_misskey(text, token, file_id=None, session_id=None, client_request_
             logging.info(">>> 消息已成功发送到 Misskey")
             try:
                 data = resp.json()
+                # 审核拦截：Misskey 已删除该条用户消息且不产生回复，
+                # auditCategory/auditReason 非空时向前端返回封禁警告。
+                audit_category = data.get("auditCategory")
+                audit_reason = data.get("auditReason")
+                if audit_category is not None or audit_reason is not None:
+                    logging.warning(f"消息被审核拦截: category={audit_category}, reason={audit_reason}")
+                    _invalidate_metadata(_timeline_cache_namespace(session_id), token)
+                    return {"audit_blocked": True, "auditCategory": audit_category, "auditReason": audit_reason}
                 assistant_text = data.get("assistantText")
                 assistant_msg_id = data.get("assistantMessageId") # 提取消息 ID
                 metadata = {
@@ -1493,6 +1523,15 @@ def _send_to_misskey(text, token, file_id=None, session_id=None, client_request_
             logging.info(">>> 消息已发送")
             return True
         else:
+            # 403 封禁：会话或角色被管理员停用，给出明确提示而不是笼统的网络错误。
+            if resp.status_code == 403:
+                try:
+                    err_code = (resp.json().get("error") or {}).get("code")
+                except ValueError:
+                    err_code = None
+                if err_code in ("AGENT_SESSION_MODERATION_BANNED", "AGENT_CHARACTER_MODERATION_BANNED"):
+                    logging.warning(f"消息发送被拒：{err_code}")
+                    return {"banned": True, "code": err_code}
             # 网关类错误（502/503/504）：消息通常已送达应用层，仅回执被网关吞掉
             if resp.status_code in (502, 503, 504):
                 logging.warning(
