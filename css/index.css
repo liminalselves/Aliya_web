@@ -1574,7 +1574,7 @@ body {
 }
 .op-subnav {
     display: grid;
-    grid-template-columns: repeat(6, minmax(0, 1fr));
+    grid-template-columns: repeat(7, minmax(0, 1fr));
     gap: 0.8rem;
     margin-bottom: 2rem;
 }
@@ -2005,6 +2005,112 @@ body {
 }
 .op-toggle-row {
     margin-bottom: 0.6rem;
+}
+
+/* 角色规则 */
+.op-rule-summary {
+    margin-bottom: 1rem;
+    color: #9fa59e;
+    font-size: 1.3rem;
+}
+.op-rule-list {
+    display: grid;
+    gap: 0.8rem;
+}
+.op-rule-empty {
+    border-radius: 0.8rem;
+    background: #262321;
+    color: #999;
+    font-size: 1.3rem;
+    line-height: 1.5;
+    padding: 1.2rem;
+    text-align: center;
+}
+.op-rule-card {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 1.15rem 1.25rem;
+    border: 1px solid #454545;
+    border-radius: 0.8rem;
+    background: #252525;
+    transition: border-color 0.2s, background 0.2s;
+}
+.op-rule-card.active {
+    border-color: rgba(185, 242, 65, 0.35);
+    background: #252b21;
+}
+.op-rule-copy {
+    display: grid;
+    gap: 0.45rem;
+    min-width: 0;
+}
+.op-rule-head {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.6rem;
+}
+.op-rule-title {
+    color: #efefef;
+    font-size: 1.45rem;
+    font-weight: 700;
+}
+.op-rule-badge {
+    flex-shrink: 0;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.08);
+    color: #bebebe;
+    font-size: 1.05rem;
+    line-height: 1;
+    padding: 0.45rem 0.7rem;
+}
+.op-rule-badge.bidirectional {
+    background: rgba(214, 116, 11, 0.16);
+    color: #e6c49f;
+}
+.op-rule-desc {
+    color: #a9a9a9;
+    font-size: 1.2rem;
+    line-height: 1.5;
+}
+.op-rule-status {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    color: #999;
+    font-size: 1.2rem;
+}
+.op-rule-status-dot {
+    width: 0.8rem;
+    height: 0.8rem;
+    border-radius: 50%;
+    background: #666;
+    flex-shrink: 0;
+}
+.op-rule-status-dot.on {
+    background: #b9f241;
+    box-shadow: 0 0 0 3px rgba(185, 242, 65, 0.15);
+}
+.op-rule-prompt-hint {
+    color: #888;
+}
+.op-rule-switch {
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    margin-top: 0.15rem;
+}
+.op-rule-switch input {
+    width: 1.8rem;
+    height: 1.8rem;
+    cursor: pointer;
+    accent-color: #d6740b;
+}
+.op-rule-switch input:disabled {
+    cursor: wait;
 }
 
 .op-proactive-hero {

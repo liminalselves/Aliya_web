@@ -2088,6 +2088,11 @@ document.addEventListener("DOMContentLoaded", function (event) {
     var opStyles = [];
     var opCurrentStyleId = "";
     var opStyleLoaded = false;
+    var opRules = [];
+    var opRulesLoading = false;
+    var opRuleSaving = false;
+    var opRuleOverrides = {};
+    var opRulesLoadedSessionId = null;
 
     function opShowStatus(msg, type) {
         opStatus.textContent = msg;
@@ -2294,6 +2299,157 @@ document.addEventListener("DOMContentLoaded", function (event) {
         if (opSegToggle) opSegToggle.checked = segConfig.enabled === true;
     }
 
+    function opRenderRules() {
+        var list = document.getElementById("opRuleList");
+        var summary = document.getElementById("opRuleSummary");
+        if (!list) return;
+        list.innerHTML = "";
+        if (opRulesLoading) {
+            list.innerHTML = '<div class="op-image-loading"><span class="op-loading-spinner"></span><span>正在加载规则...</span></div>';
+            if (summary) summary.hidden = true;
+            return;
+        }
+        if (!(opCurrentSessionId || currentSessionId)) {
+            list.innerHTML = '<div class="op-rule-empty">当前没有可用会话。</div>';
+            if (summary) summary.hidden = true;
+            return;
+        }
+        if (opRules.length === 0) {
+            list.innerHTML = '<div class="op-rule-empty">当前会话使用的角色没有配置规则。</div>';
+            if (summary) summary.hidden = true;
+            return;
+        }
+        if (summary) {
+            var persistentCount = 0;
+            var toggleableCount = 0;
+            opRules.forEach(function(rule) {
+                if (rule.type === "persistent") persistentCount++;
+                else toggleableCount++;
+            });
+            summary.hidden = false;
+            summary.textContent = opRules.length + " 条规则 · " + persistentCount + " 常驻 · " + toggleableCount + " 可切换";
+        }
+        opRules.forEach(function(rule) {
+            var card = document.createElement("div");
+            card.className = "op-rule-card" + (rule.type === "toggleable" && rule.currentEnabled ? " active" : "");
+
+            var copy = document.createElement("div");
+            copy.className = "op-rule-copy";
+
+            var head = document.createElement("div");
+            head.className = "op-rule-head";
+
+            var title = document.createElement("span");
+            title.className = "op-rule-title";
+            title.textContent = rule.name || "未命名规则";
+
+            var badge = document.createElement("span");
+            badge.className = "op-rule-badge" + (rule.type === "toggleable" && rule.hasDisabledPrompt ? " bidirectional" : "");
+            badge.textContent = rule.type === "persistent" ? "常驻" : (rule.hasDisabledPrompt ? "双向" : "可切换");
+
+            head.appendChild(title);
+            head.appendChild(badge);
+            copy.appendChild(head);
+
+            if (rule.description) {
+                var desc = document.createElement("div");
+                desc.className = "op-rule-desc";
+                desc.textContent = rule.description;
+                copy.appendChild(desc);
+            }
+            if (rule.type === "toggleable") {
+                var status = document.createElement("div");
+                status.className = "op-rule-status";
+
+                var dot = document.createElement("span");
+                dot.className = "op-rule-status-dot" + (rule.currentEnabled ? " on" : " off");
+                status.appendChild(dot);
+
+                var statusText = document.createElement("span");
+                statusText.textContent = rule.currentEnabled ? "已开启" : "已关闭";
+                status.appendChild(statusText);
+
+                if (rule.hasDisabledPrompt) {
+                    var promptHint = document.createElement("span");
+                    promptHint.className = "op-rule-prompt-hint";
+                    promptHint.textContent = rule.currentEnabled ? "（注入开启提示词）" : "（注入关闭提示词）";
+                    status.appendChild(promptHint);
+                }
+                copy.appendChild(status);
+            }
+
+            card.appendChild(copy);
+
+            if (rule.type === "toggleable") {
+                var toggle = document.createElement("label");
+                toggle.className = "op-rule-switch";
+                var input = document.createElement("input");
+                input.type = "checkbox";
+                input.checked = rule.currentEnabled === true;
+                input.disabled = opRuleSaving;
+                input.addEventListener("change", function() { opToggleRule(rule, input.checked === true); });
+                toggle.appendChild(input);
+                card.appendChild(toggle);
+            }
+
+            list.appendChild(card);
+        });
+    }
+
+    async function opLoadRules() {
+        var sessionId = opCurrentSessionId || currentSessionId;
+        if (!sessionId) {
+            opRules = [];
+            opRulesLoadedSessionId = null;
+            opRenderRules();
+            return;
+        }
+        opRulesLoading = true;
+        opRenderRules();
+        try {
+            var data = await opPostConversation({ action: "rule_list", session_id: sessionId });
+            opRules = Array.isArray(data) ? data : [];
+            opRulesLoadedSessionId = sessionId;
+        } catch (err) {
+            opRules = [];
+            if (opCurrentPage === "rules") opShowStatus("加载规则失败：" + err.message, "error");
+        } finally {
+            opRulesLoading = false;
+            opRenderRules();
+        }
+    }
+
+    function opEnsureRulesLoaded() {
+        var sessionId = opCurrentSessionId || currentSessionId;
+        if (!sessionId) return;
+        if (opRulesLoadedSessionId === sessionId && !opRulesLoading) return;
+        opLoadRules();
+    }
+
+    async function opToggleRule(rule, enabled) {
+        if (opRuleSaving) return;
+        opRuleSaving = true;
+        opRenderRules();
+        try {
+            var nextOverrides = Object.assign({}, opRuleOverrides);
+            nextOverrides[rule.id] = enabled === true;
+            var result = await opPostConversation({
+                action: "update",
+                session_id: opCurrentSessionId || currentSessionId,
+                rule_overrides: nextOverrides
+            });
+            if (!result) throw new Error("请求未完成");
+            opRuleOverrides = nextOverrides;
+            rule.currentEnabled = enabled === true;
+            opShowStatus("规则已更新", "success");
+        } catch (err) {
+            opShowStatus("更新规则失败：" + err.message, "error");
+        } finally {
+            opRuleSaving = false;
+            opRenderRules();
+        }
+    }
+
     function opSetPage(page) {
         opCurrentPage = page || "session";
         document.querySelectorAll(".op-page[data-op-page]").forEach(function(el) {
@@ -2311,6 +2467,7 @@ document.addEventListener("DOMContentLoaded", function (event) {
             if (opCurrentSessionId) opLoadProactiveSchedules();
         }
         if (opCurrentPage === "style" && !opStyleLoaded) opLoadStyleOptions();
+        if (opCurrentPage === "rules") opEnsureRulesLoaded();
     }
 
     function opSyncMemorySettingsLink() {
@@ -3028,6 +3185,12 @@ document.addEventListener("DOMContentLoaded", function (event) {
         opApplyConfigPatchToControls(safePatch);
         opConfigLoadedSessionId = opCurrentSessionId;
         opSyncMemorySettingsLink();
+        if (data.ruleOverrides && typeof data.ruleOverrides === "object" && !Array.isArray(data.ruleOverrides)) {
+            opRuleOverrides = Object.assign({}, data.ruleOverrides);
+        } else {
+            opRuleOverrides = {};
+        }
+        if (opCurrentPage === "rules") opEnsureRulesLoaded();
         if (opProactiveLastError) {
             var errorLines = [];
             if (data.randomProactiveLastError) errorLines.push("上次随机主动消息执行失败，本次已跳过。");
@@ -3049,6 +3212,11 @@ document.addEventListener("DOMContentLoaded", function (event) {
         opConfirmedConfig = {};
         opDesiredConfig = {};
         opConfigLoadRevision++;
+        opRules = [];
+        opRulesLoading = false;
+        opRuleSaving = false;
+        opRuleOverrides = {};
+        opRulesLoadedSessionId = null;
     }
 
     function opQueueConfigPatch(patch) {
@@ -3379,6 +3547,7 @@ document.addEventListener("DOMContentLoaded", function (event) {
         opRenderImageLoading();
         if (opVisionModels.length) opRenderVisionModels(opDesiredConfig.agent_vision_model_id || "");
         else opRenderVisionModelLoading();
+        opRenderRules();
         if (opPanelLoadPromise) return opPanelLoadPromise;
         opPanelLoadPromise = (async function() {
             var sessionsPromise = opLoadSessions();

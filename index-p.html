@@ -274,6 +274,7 @@
                 <button type="button" class="op-subnav-btn" data-op-target="draw">生图</button>
                 <button type="button" class="op-subnav-btn" data-op-target="proactive">主动消息</button>
                 <button type="button" class="op-subnav-btn" data-op-target="memory">记忆</button>
+                <button type="button" class="op-subnav-btn" data-op-target="rules">规则</button>
                 <button type="button" class="op-subnav-btn" data-op-target="style">文风</button>
             </div>
 
@@ -395,6 +396,15 @@
                        href="https://misskey.liminalselves.top/agents" target="_blank" rel="noopener noreferrer">
                         前往 Misskey 设置记忆
                     </a>
+                </div>
+            </div>
+
+            <div class="op-page" data-op-page="rules">
+                <div class="op-section">
+                    <label class="op-label">角色规则</label>
+                    <div class="op-rule-summary" id="opRuleSummary" hidden></div>
+                    <div class="op-rule-list" id="opRuleList"></div>
+                    <div class="op-caption">规则内容由角色作者设定，此处仅显示名称与简介。开关状态即时生效，下一轮对话将使用更新后的规则。</div>
                 </div>
             </div>
 

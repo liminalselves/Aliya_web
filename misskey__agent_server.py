@@ -768,6 +768,8 @@ def conversation():
         return public_list(token)
     elif action == "subscribe_style":
         return subscribe_style(data, token)
+    elif action == "rule_list":
+        return list_session_rules(data, token)
     else:
         return jsonify({"error": "不支持的操作，请使用 create 或 update"}), 400
 
@@ -884,6 +886,16 @@ def _update_session(data, token):
     ):
         if local_key in data:
             payload[upstream_key] = _bool_from_data(data, local_key)
+    if "rule_overrides" in data:
+        raw_overrides = data.get("rule_overrides")
+        if isinstance(raw_overrides, dict):
+            payload["ruleOverrides"] = {
+                str(rule_id): bool(enabled)
+                for rule_id, enabled in raw_overrides.items()
+                if isinstance(enabled, bool)
+            }
+        else:
+            payload["ruleOverrides"] = {}
     headers = _misskey_headers()
     try:
         resp = _http_post(url, json=payload, headers=headers, timeout=30)
@@ -995,6 +1007,18 @@ def list_vision_models(token):
 
 def _proactive_schedule_api(token, action, payload=None):
     return _misskey_api_post(token, f"agents/proactive-schedules/{action}", payload or {})
+
+def list_session_rules(data, token):
+    """获取当前会话的角色规则元数据列表（不含规则内容）。"""
+    try:
+        session_id = _proactive_session_id(data, token)
+        result = _misskey_api_post(token, "agents/sessions/rule-list", {"sessionId": session_id})
+        return jsonify(result if isinstance(result, list) else []), 200
+    except PermissionError as e:
+        return jsonify({"error": str(e)}), 403
+    except requests.exceptions.RequestException as e:
+        logging.error(f"获取会话规则失败: {e}")
+        return jsonify({"error": str(e)}), 500
 
 def _proactive_session_id(data, token):
     session_id = _string_from_json(data, "session_id", 128)
