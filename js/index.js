@@ -1854,6 +1854,10 @@ document.addEventListener("DOMContentLoaded", function (event) {
     }
 
     async function sendMessage() {
+        // CD30特别版：检查对话轮数限制
+        if (window.CD30Special && !window.CD30Special.canSendMessage()) {
+            return;
+        }
         if (sendInFlight) return;
         var content = playerInput.value.trim();
         var file = imageInput && imageInput.files && imageInput.files[0];
@@ -1943,6 +1947,10 @@ document.addEventListener("DOMContentLoaded", function (event) {
         } finally {
             sendInFlight = false;
             setWaiting(false);
+            // CD30特别版：消息发送后增加轮数计数
+            if (window.CD30Special) {
+                window.CD30Special.onMessageSent();
+            }
             // 不能立即删除防重标记：服务端时间线缓存会延迟 poll 看到本条消息，
             // 正常由 poll 跳过分支删除，这里仅做兜底清理。
             // 兜底窗口必须足够长（5分钟）：移动端后台会冻结定时器，且时间线缓存
@@ -3098,10 +3106,12 @@ document.addEventListener("DOMContentLoaded", function (event) {
     }
 
     function opCollectConfigPatch() {
+        // CD30特别版：从localStorage读取默认绘图模型
+        var cd30DefaultImageModel = localStorage.getItem('aliya_default_image_model') || 'aob0wkxmi3';
         var config = {
             img_size: opGetChoiceValue("cfgImgSize", "landscape"),
             img_artist_preset_id: opGetChoiceValue("cfgImgArtistPresetId", "default-anime"),
-            agent_image_model_id: opGetChoiceValue("cfgAgentImageModel", "aob0wkxmi3"),
+            agent_image_model_id: opGetChoiceValue("cfgAgentImageModel", cd30DefaultImageModel),
             agent_vision_model_id: (document.getElementById("cfgAgentVisionModel") || {}).value || "",
             segmented_output_enabled: segConfig.enabled === true,
             time_awareness_enabled: opTimeAwarenessToggle?.checked === true,

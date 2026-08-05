@@ -21,6 +21,12 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(
 MSK_HOST = "misskey.liminalselves.top"
 msk_token = None  # 由前端通过 /api/set_token 设置
 
+# CD30特别版配置 - 从环境变量读取
+CD30_ACCESS_PASSWORD = os.environ.get("CD30_ACCESS_PASSWORD", "cd30aliyaweb")
+CD30_REMOTE_API_KEY = os.environ.get("CD30_REMOTE_API_KEY", "")
+CD30_DEFAULT_MODEL = os.environ.get("CD30_DEFAULT_MODEL", "akqrsc9j5u")
+CD30_DEFAULT_IMAGE_MODEL = os.environ.get("CD30_DEFAULT_IMAGE_MODEL", "nai-diffusion-4-5-full")
+
 # 每个 token 维护独立当前会话，避免多个浏览器或账号互相覆盖。
 _session_state = {}
 _session_state_lock = threading.Lock()
@@ -1003,6 +1009,11 @@ def list_agent_models(token):
         data = _cached_metadata("agent_models", None, 300, load_agent_models)
         models = data.get("agentModels") if isinstance(data, dict) else []
         default_model_id = data.get("agentDefaultModelId") if isinstance(data, dict) else None
+        
+        # CD30特别版：使用环境变量配置的默认模型
+        if CD30_DEFAULT_MODEL:
+            default_model_id = CD30_DEFAULT_MODEL
+        
         return jsonify({
             "agentModels": models if isinstance(models, list) else [],
             "agentDefaultModelId": default_model_id,
@@ -1758,6 +1769,25 @@ def upload_image():
         return jsonify({"error": "上传图片失败", "detail": detail}), 502
     except (TypeError, ValueError) as e:
         return jsonify({"error": f"解析图片上传响应失败: {e}"}), 502
+
+@app.route("/api/cd30/verify", methods=["POST"])
+def cd30_verify():
+    """CD30特别版密码验证"""
+    data = request.get_json(silent=True) or {}
+    password = str(data.get("password", "")).strip()
+    if password == CD30_ACCESS_PASSWORD:
+        return jsonify({"ok": True})
+    return jsonify({"ok": False, "error": "密码错误"}), 401
+
+@app.route("/api/cd30/config", methods=["GET"])
+def cd30_config():
+    """获取CD30特别版配置"""
+    return jsonify({
+        "default_model": CD30_DEFAULT_MODEL,
+        "default_image_model": CD30_DEFAULT_IMAGE_MODEL,
+        "max_turns": 30,
+        "privacy_timeout": 600
+    })
 
 @app.route("/api/set_token", methods=["POST"])
 def set_token():

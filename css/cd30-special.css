@@ -1,0 +1,353 @@
+/* CD30瞳电游工作室展区特别版样式 */
+
+/* ==================== 顶部横幅 ==================== */
+#cd30-banner {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+    color: #fff;
+    padding: 12px 20px;
+    z-index: 10000;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.3);
+    animation: cd30-banner-slide 0.5s ease-out;
+}
+
+@keyframes cd30-banner-slide {
+    from { transform: translateY(-100%); }
+    to { transform: translateY(0); }
+}
+
+#cd30-banner.cd30-banner-hidden {
+    transform: translateY(-100%);
+    transition: transform 0.3s ease-in;
+}
+
+.cd30-banner-content {
+    max-width: 1400px;
+    margin: 0 auto;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 15px;
+    flex-wrap: wrap;
+    position: relative;
+}
+
+.cd30-banner-badge {
+    background: #e94560;
+    color: #fff;
+    padding: 4px 12px;
+    border-radius: 20px;
+    font-size: 14px;
+    font-weight: bold;
+    white-space: nowrap;
+}
+
+.cd30-banner-text {
+    font-size: 15px;
+    line-height: 1.5;
+}
+
+.cd30-banner-text a {
+    color: #00d9ff;
+    text-decoration: underline;
+    transition: color 0.2s;
+}
+
+.cd30-banner-text a:hover {
+    color: #7df9ff;
+}
+
+.cd30-banner-close {
+    position: absolute;
+    right: 0;
+    background: none;
+    border: none;
+    color: #888;
+    font-size: 24px;
+    cursor: pointer;
+    padding: 0 5px;
+    line-height: 1;
+    transition: color 0.2s;
+}
+
+.cd30-banner-close:hover {
+    color: #fff;
+}
+
+/* ==================== 状态显示区域 ==================== */
+.cd30-status-item {
+    position: fixed;
+    background: rgba(0, 0, 0, 0.75);
+    color: #fff;
+    padding: 10px 16px;
+    border-radius: 8px;
+    font-size: 14px;
+    z-index: 9999;
+    backdrop-filter: blur(4px);
+    border: 1px solid rgba(255,255,255,0.1);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+#cd30-turns-display {
+    top: 70px;
+    right: 20px;
+}
+
+#cd30-privacy-display {
+    top: 120px;
+    right: 20px;
+}
+
+.cd30-status-label {
+    color: #aaa;
+}
+
+.cd30-status-value {
+    font-weight: bold;
+    color: #00d9ff;
+    font-size: 16px;
+}
+
+.cd30-status-item.cd30-warning .cd30-status-value {
+    color: #f39c12;
+}
+
+.cd30-status-item.cd30-danger .cd30-status-value {
+    color: #e74c3c;
+    animation: cd30-pulse 1s infinite;
+}
+
+@keyframes cd30-pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.6; }
+}
+
+/* ==================== 认证对话框 ==================== */
+.cd30-auth-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.9);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 20000;
+}
+
+.cd30-auth-panel {
+    background: #1a1a2e;
+    border: 1px solid #333;
+    border-radius: 16px;
+    padding: 40px;
+    text-align: center;
+    max-width: 400px;
+    width: 90%;
+    box-shadow: 0 10px 40px rgba(0,0,0,0.5);
+}
+
+.cd30-auth-panel h2 {
+    color: #fff;
+    font-size: 24px;
+    margin-bottom: 10px;
+}
+
+.cd30-auth-panel p {
+    color: #888;
+    margin-bottom: 20px;
+}
+
+.cd30-auth-panel input {
+    width: 100%;
+    padding: 14px 18px;
+    border: 1px solid #444;
+    border-radius: 8px;
+    background: #0f0f1a;
+    color: #fff;
+    font-size: 16px;
+    margin-bottom: 15px;
+    box-sizing: border-box;
+    outline: none;
+    transition: border-color 0.2s;
+}
+
+.cd30-auth-panel input:focus {
+    border-color: #00d9ff;
+}
+
+.cd30-auth-error {
+    color: #e74c3c;
+    font-size: 14px;
+    min-height: 20px;
+    margin-bottom: 15px;
+}
+
+/* ==================== 模态框 ==================== */
+.cd30-modal-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.8);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 15000;
+    animation: cd30-fade-in 0.3s ease;
+}
+
+@keyframes cd30-fade-in {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+
+.cd30-modal {
+    background: #1a1a2e;
+    border: 1px solid #333;
+    border-radius: 16px;
+    padding: 30px;
+    max-width: 450px;
+    width: 90%;
+    text-align: center;
+    box-shadow: 0 10px 40px rgba(0,0,0,0.5);
+    animation: cd30-scale-in 0.3s ease;
+}
+
+@keyframes cd30-scale-in {
+    from { transform: scale(0.9); opacity: 0; }
+    to { transform: scale(1); opacity: 1; }
+}
+
+.cd30-modal h3 {
+    color: #fff;
+    font-size: 20px;
+    margin-bottom: 15px;
+}
+
+.cd30-modal p {
+    color: #aaa;
+    margin-bottom: 10px;
+    line-height: 1.6;
+}
+
+/* ==================== 按钮样式 ==================== */
+.cd30-btn {
+    padding: 12px 28px;
+    border: none;
+    border-radius: 8px;
+    font-size: 16px;
+    cursor: pointer;
+    transition: all 0.2s;
+    font-weight: 500;
+}
+
+.cd30-btn-primary {
+    background: linear-gradient(135deg, #00d9ff 0%, #0099cc 100%);
+    color: #fff;
+}
+
+.cd30-btn-primary:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0, 217, 255, 0.4);
+}
+
+.cd30-btn-restart {
+    position: fixed;
+    bottom: 30px;
+    right: 30px;
+    background: linear-gradient(135deg, #e94560 0%, #c73650 100%);
+    color: #fff;
+    padding: 14px 24px;
+    font-size: 15px;
+    z-index: 9998;
+    box-shadow: 0 4px 15px rgba(233, 69, 96, 0.4);
+}
+
+.cd30-btn-restart:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 20px rgba(233, 69, 96, 0.5);
+}
+
+/* ==================== 使用说明指南 ==================== */
+.cd30-guide {
+    text-align: left;
+    max-width: 500px;
+}
+
+.cd30-guide h3 {
+    text-align: center;
+    margin-bottom: 20px;
+}
+
+.cd30-guide-content {
+    margin-bottom: 20px;
+}
+
+.cd30-guide-content ul {
+    margin: 10px 0;
+    padding-left: 20px;
+    color: #aaa;
+}
+
+.cd30-guide-content li {
+    margin-bottom: 8px;
+    line-height: 1.5;
+}
+
+.cd30-guide-content p {
+    margin-bottom: 12px;
+}
+
+.cd30-guide .cd30-btn {
+    display: block;
+    width: 100%;
+    margin-top: 20px;
+}
+
+/* ==================== 响应式调整 ==================== */
+@media (max-width: 768px) {
+    .cd30-banner-content {
+        flex-direction: column;
+        gap: 8px;
+        text-align: center;
+    }
+    
+    .cd30-banner-close {
+        position: static;
+        margin-top: 5px;
+    }
+    
+    #cd30-turns-display,
+    #cd30-privacy-display {
+        right: 10px;
+        font-size: 12px;
+        padding: 8px 12px;
+    }
+    
+    #cd30-turns-display { top: 100px; }
+    #cd30-privacy-display { top: 145px; }
+    
+    .cd30-btn-restart {
+        bottom: 20px;
+        right: 20px;
+        padding: 12px 20px;
+        font-size: 14px;
+    }
+    
+    .cd30-modal {
+        padding: 20px;
+        margin: 20px;
+    }
+}
+
+/* ==================== 主内容区域调整 ==================== */
+body {
+    padding-top: 50px; /* 为顶部横幅留出空间 */
+}
+
+/* 确保原有内容不被横幅遮挡 */
+#mainContent,
+.new-page {
+    margin-top: 20px;
+}
