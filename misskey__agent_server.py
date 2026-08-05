@@ -683,10 +683,34 @@ def chat():
         except Exception as e:
             logging.error(f"发送消息前解析会话失败: {e}")
             return jsonify({"status": "error", "reply": f"准备会话失败: {e}"}), 500
+        # client_request_id 透传给 Misskey 作幂等键，防止网络重试导致同一条消息发两次。
+        client_request_id = _string_from_json(data, "client_request_id", 64)
         _set_cached_session_id(token, session_id)
         _add_message("player", player_msg or "[图片消息]", token=token, metadata={"file_id": file_id} if file_id else None, session_id=session_id)
-        result = _send_to_misskey(player_msg, token, file_id=file_id, session_id=session_id)
+        result = _send_to_misskey(player_msg, token, file_id=file_id, session_id=session_id, client_request_id=client_request_id)
 
+        if isinstance(result, dict) and result.get("banned"):
+            if result.get("code") == "AGENT_CHARACTER_MODERATION_BANNED":
+                warning = "该角色已被管理员停用，无法继续对话。"
+            else:
+                warning = "该会话因违规已被封禁，无法继续发送消息。请遵守平台守则否则将面临严重处罚。如有疑问请联系管理员。"
+            return jsonify({
+                "status": "error",
+                "reply": warning,
+                "session_banned": True,
+            })
+        if isinstance(result, dict) and result.get("audit_blocked"):
+            category = result.get("auditCategory")
+            reason = result.get("auditReason")
+            detail = reason or category
+            warning = f"消息被内容审核拦截{('：' + detail) if detail else ''}。该消息不会保留，也不会产生回复，请遵守平台规则。"
+            return jsonify({
+                "status": "error",
+                "reply": warning,
+                "audit_blocked": True,
+                "audit_category": category,
+                "audit_reason": reason,
+            })
         if isinstance(result, dict) and result.get("error"):
             return jsonify({
                 "status": "error",
@@ -698,6 +722,7 @@ def chat():
                 "reply": "消息已发送并收到回复",
                 "assistant_message": result["text"],
                 "assistant_message_id": result.get("messageId"),
+                "client_request_id": result.get("client_request_id"),
                 "image_recognition_status": result.get("imageRecognitionStatus"),
                 "image_recognition_description": result.get("imageRecognitionDescription"),
                 "proactive_schedule_action_types": result.get("proactiveScheduleActionTypes", []),
@@ -711,7 +736,7 @@ def chat():
         else:
             return jsonify({
                 "status": "error",
-                "reply": "发送到 Misskey 失败，请检查网络"
+                "reply": "与 Misskey 的连接中断，消息可能已送达。Aliya 回复后会自动显示，请勿重复发送。"
             }), 500
     finally:
         _chat_exit(token)
@@ -1451,7 +1476,7 @@ def _verify_message_delivered(token, session_id, text, attempts=4, interval=4):
     return False
 
 
-def _send_to_misskey(text, token, file_id=None, session_id=None):
+def _send_to_misskey(text, token, file_id=None, session_id=None, client_request_id=None):
     """通过 Misskey HTTP API 发送消息，并直接解析同步返回的response"""
     try:
         if not session_id:
@@ -1467,7 +1492,7 @@ def _send_to_misskey(text, token, file_id=None, session_id=None):
         "i": token,
         "sessionId": session_id,
         "text": text or "",
-        "clientRequestId": str(uuid.uuid4())
+        "clientRequestId": client_request_id or str(uuid.uuid4())
     }
     if file_id:
         payload["fileId"] = file_id
@@ -1490,6 +1515,14 @@ def _send_to_misskey(text, token, file_id=None, session_id=None):
             logging.info(">>> 消息已成功发送到 Misskey")
             try:
                 data = resp.json()
+                # 审核拦截：Misskey 已删除该条用户消息且不产生回复，
+                # auditCategory/auditReason 非空时向前端返回封禁警告。
+                audit_category = data.get("auditCategory")
+                audit_reason = data.get("auditReason")
+                if audit_category is not None or audit_reason is not None:
+                    logging.warning(f"消息被审核拦截: category={audit_category}, reason={audit_reason}")
+                    _invalidate_metadata(_timeline_cache_namespace(session_id), token)
+                    return {"audit_blocked": True, "auditCategory": audit_category, "auditReason": audit_reason}
                 assistant_text = data.get("assistantText")
                 assistant_msg_id = data.get("assistantMessageId") # 提取消息 ID
                 metadata = {
@@ -1501,10 +1534,10 @@ def _send_to_misskey(text, token, file_id=None, session_id=None):
                 if assistant_text:
                     logging.info("<<< 已收到 Misskey 同步回复")
                     _add_message("aliya", assistant_text, msk_msg_id=assistant_msg_id, token=token, metadata=metadata, session_id=session_id)
-                    return {"text": assistant_text, "messageId": assistant_msg_id, **metadata}
+                    return {"text": assistant_text, "messageId": assistant_msg_id, "client_request_id": client_request_id, **metadata}
                 else:
                     logging.warning("API 返回成功，但未找到 assistantText 字段")
-                    return {"text": "", "messageId": assistant_msg_id, **metadata}
+                    return {"text": "", "messageId": assistant_msg_id, "client_request_id": client_request_id, **metadata}
             except ValueError:
                 logging.error("API 返回的不是有效的 JSON 格式")
                 return True
@@ -1514,6 +1547,15 @@ def _send_to_misskey(text, token, file_id=None, session_id=None):
             logging.info(">>> 消息已发送")
             return True
         else:
+            # 403 封禁：会话或角色被管理员停用，给出明确提示而不是笼统的网络错误。
+            if resp.status_code == 403:
+                try:
+                    err_code = (resp.json().get("error") or {}).get("code")
+                except ValueError:
+                    err_code = None
+                if err_code in ("AGENT_SESSION_MODERATION_BANNED", "AGENT_CHARACTER_MODERATION_BANNED"):
+                    logging.warning(f"消息发送被拒：{err_code}")
+                    return {"banned": True, "code": err_code}
             # 网关类错误（502/503/504）：消息通常已送达应用层，仅回执被网关吞掉
             if resp.status_code in (502, 503, 504):
                 logging.warning(
