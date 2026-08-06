@@ -865,6 +865,13 @@ document.addEventListener("DOMContentLoaded", function (event) {
     }
 
     function clearTokenAndReturnToAuth(message) {
+        // CD30特别版：不跳转回Misskey授权，而是刷新页面重新认证
+        if (window.CD30Special) {
+            localStorage.removeItem('cd30_auth_verified');
+            localStorage.removeItem('aliya_msk_token');
+            location.reload();
+            return;
+        }
         mskToken = "";
         localStorage.removeItem("aliya_msk_token");
         if (pollTimer) {
@@ -877,12 +884,20 @@ document.addEventListener("DOMContentLoaded", function (event) {
     }
 
     function isAuthFailureResponse(res, data) {
+        // CD30特别版：跳过token验证失败检查
+        if (window.CD30Special) {
+            return false;
+        }
         if (res && (res.status === 401 || res.status === 403)) return true;
         var errorText = data && (data.error || data.reply || data.message);
         return typeof errorText === "string" && /token|鉴权|授权|无效|过期|unauthorized|forbidden/i.test(errorText);
     }
 
     async function guardAuthResponse(res, data) {
+        // CD30特别版：跳过token验证
+        if (window.CD30Special) {
+            return false;
+        }
         if (isAuthFailureResponse(res, data)) {
             clearTokenAndReturnToAuth("token 已失效，请重新完成 Misskey 授权。");
             return true;
@@ -891,6 +906,10 @@ document.addEventListener("DOMContentLoaded", function (event) {
     }
 
     function startTokenWatchdog() {
+        // CD30特别版：跳过token监控
+        if (window.CD30Special) {
+            return;
+        }
         setInterval(async function() {
             if (!mskToken || document.hidden) return;
             var ok = await validateAndActivateToken(mskToken);
@@ -902,6 +921,10 @@ document.addEventListener("DOMContentLoaded", function (event) {
 
     // 给所有 POST body 自动附加 token
     function makeBody(obj) {
+        // CD30特别版：确保token从localStorage读取
+        if (window.CD30Special && !mskToken) {
+            mskToken = localStorage.getItem('aliya_msk_token') || '';
+        }
         obj.token = mskToken;
         return JSON.stringify(obj);
     }
@@ -940,6 +963,28 @@ document.addEventListener("DOMContentLoaded", function (event) {
     var earliestMsgId = null;
     var recentlySentSet = {}; 
     var recentlyReceivedSet = {};
+    // 基于 Misskey 消息 id 的防重集合：最可靠的防重依据。
+    var recentlyReceivedIds = {};
+    function markReceivedId(id) {
+        if (!id) return;
+        recentlyReceivedIds[id] = true;
+        setTimeout(function() { delete recentlyReceivedIds[id]; }, 300000);
+    }
+    // 检查分段文本是否已被防重标记覆盖：
+    // 分段输出时，sendMessage 标记的是合并文本，poll 拉到的是分段文本。
+    // 除了精确匹配，还需检查分段文本是否是某个已标记合并文本的组成部分（包含匹配）。
+    function isRecentlyReceived(content) {
+        if (!content) return false;
+        if (recentlyReceivedSet[content]) return true;
+        var trimmed = String(content).trim();
+        if (trimmed && recentlyReceivedSet[trimmed]) return true;
+        // 包含匹配：分段文本若是某个已标记合并文本的子串，视为重复
+        for (var key in recentlyReceivedSet) {
+            if (!key) continue;
+            if (trimmed && key.indexOf(trimmed) !== -1) return true;
+        }
+        return false;
+    }
     var isAtBottomFlag = true;
     var isTimelineLoading = false;
     var timelineLoadPromise = null;
@@ -1008,13 +1053,18 @@ document.addEventListener("DOMContentLoaded", function (event) {
     }
 
     function loadSegConfig() {
-        segConfig.enabled = false;
-        try {
-            var saved = JSON.parse(localStorage.getItem(segConfigStorageKey()));
-            if (saved && typeof saved.enabled === "boolean") {
-                segConfig.enabled = saved.enabled;
-            }
-        } catch(e) {}
+        // CD30特别版：默认开启分段输出，忽略保存的配置
+        if (window.CD30Special) {
+            segConfig.enabled = true;
+        } else {
+            segConfig.enabled = false;
+            try {
+                var saved = JSON.parse(localStorage.getItem(segConfigStorageKey()));
+                if (saved && typeof saved.enabled === "boolean") {
+                    segConfig.enabled = saved.enabled;
+                }
+            } catch(e) {}
+        }
     }
 
     function saveSegConfig() {
@@ -1803,7 +1853,11 @@ document.addEventListener("DOMContentLoaded", function (event) {
                         delete recentlySentSet[m.content];
                         continue;
                     }
-                    if (mRole === "aliya" && recentlyReceivedSet[m.content]) {
+                    if (mRole === "aliya" && recentlyReceivedIds[m.id]) {
+                        lastMsgId = m.id;
+                        continue;
+                    }
+                    if (mRole === "aliya" && isRecentlyReceived(m.content)) {
                         lastMsgId = m.id;
                         delete recentlyReceivedSet[m.content];
                         continue;
@@ -1815,6 +1869,8 @@ document.addEventListener("DOMContentLoaded", function (event) {
                     }
                     // 走到这里说明这是真实的新消息
                     if (mRole === "aliya") {
+                        // 关键：在 await 图片处理之前就标记消息 id，避免 await 期间 sendMessage 重复渲染。
+                        markReceivedId(m.id);
                         var processed = await processDrawingInstruction(m.content, m.id);
                         var hrResult = processHeartRateInstruction(processed.text);
                         if (!hrResult.matched) {
@@ -1829,7 +1885,7 @@ document.addEventListener("DOMContentLoaded", function (event) {
                         // 用 IIFE 捕获本条消息内容，避免 var 循环变量被 setTimeout 闭包引用到最后一条消息。
                         (function (contentKey) {
                             recentlyReceivedSet[contentKey] = true;
-                            setTimeout(function() { delete recentlyReceivedSet[contentKey]; }, 10000);
+                            setTimeout(function() { delete recentlyReceivedSet[contentKey]; }, 300000);
                         })(m.content);
                         appendedAssistant = true;
                     } else if (mRole === "player") {
@@ -1850,13 +1906,19 @@ document.addEventListener("DOMContentLoaded", function (event) {
                         delete recentlySentSet[msg.content];
                         continue;
                     }
-                    if (msgRole === "aliya" && recentlyReceivedSet[msg.content]) {
+                    if (msgRole === "aliya" && recentlyReceivedIds[msg.id]) {
+                        if (msg.id > lastMsgId) lastMsgId = msg.id;
+                        continue;
+                    }
+                    if (msgRole === "aliya" && isRecentlyReceived(msg.content)) {
                         if (msg.id > lastMsgId) lastMsgId = msg.id;
                         delete recentlyReceivedSet[msg.content];
                         continue;
                     }
                     
                     if (msgRole === "aliya") {
+                        // 关键：在 await 图片处理之前就标记消息 id，避免 await 期间 sendMessage 重复渲染。
+                        markReceivedId(msg.id);
                         var processed = await processDrawingInstruction(msg.content, msg.msk_msg_id);
                         var hrResult = processHeartRateInstruction(processed.text);
                         if (!hrResult.matched) {
@@ -1871,7 +1933,7 @@ document.addEventListener("DOMContentLoaded", function (event) {
                         });
                         (function (contentKey) {
                             recentlyReceivedSet[contentKey] = true;
-                            setTimeout(function() { delete recentlyReceivedSet[contentKey]; }, 10000);
+                            setTimeout(function() { delete recentlyReceivedSet[contentKey]; }, 300000);
                         })(msg.content);
                     } else {
                         appendMessage(msgRole, msg.content, msg.createdAt || msg.timestamp || null, timelineAttachmentImageUrls(msg.file));
@@ -1947,6 +2009,8 @@ document.addEventListener("DOMContentLoaded", function (event) {
                 var msgId = data.assistant_message_id;
                 // 恢复稳定版逻辑：不再依赖 timelineSnapshotMessageIds 这种复杂的快照比对。
                 // 只要后端返回了，我们就直接渲染。如果 poll 抢先拉到了，poll 里的 recentlyReceivedSet 会跳过它。
+                // 关键：在 await 图片处理之前就标记消息 id，避免 await 期间 poll 重复渲染。
+                markReceivedId(msgId);
                 var processed = await processDrawingInstruction(rawText, msgId);
                 var hrResult = processHeartRateInstruction(processed.text);
                 if (!hrResult.matched) {
@@ -1969,11 +2033,23 @@ document.addEventListener("DOMContentLoaded", function (event) {
                     assistantMeta.proactiveScheduleActionTypes,
                     assistantMeta.proactiveScheduleControlFailed
                 );
+                // 渲染检查只看 content（poll 渲染时会标记 content），不看 id。
+                // id 是本条 sendMessage 自己提前标记的（用于挡 poll），若此处检查 id 会把自己的渲染也挡掉。
                 if (!recentlyReceivedSet[rawText]) {
                     renderAliyaMessage(hrResult.text, processed.images, false, assistantMeta);
                 }
-                recentlyReceivedSet[rawText] = true;
-                setTimeout(function () { delete recentlyReceivedSet[rawText]; }, 10000);
+                // 防重标记：分段输出开启时，Misskey 时间线会把一条回复拆成多条独立消息，
+                // 而 /api/chat 同步返回的 rawText 是合并文本。两者 content 对不上会导致 poll 重复渲染。
+                // 因此除了标记合并文本，还要按换行拆分标记每个分段，确保 poll 拉到分段消息时能命中防重。
+                var dedupKeys = [rawText];
+                rawText.split(/\n+/).forEach(function(seg) {
+                    var trimmed = seg.trim();
+                    if (trimmed && trimmed !== rawText) dedupKeys.push(trimmed);
+                });
+                dedupKeys.forEach(function(key) {
+                    recentlyReceivedSet[key] = true;
+                    setTimeout(function () { delete recentlyReceivedSet[key]; }, 300000);
+                });
             } else if (data.status === "error") {
                 var errorReply = data.reply || data.error || "通信故障，请稍后再试";
                 var errorTimestamp = new Date().toISOString();
@@ -2599,6 +2675,13 @@ document.addEventListener("DOMContentLoaded", function (event) {
 
     function opResolvedAgentDefaultModelId() {
         if (opAgentModels.length === 0) return "";
+        // CD30特别版：优先使用CD30默认模型
+        if (window.CD30Special) {
+            var cd30DefaultModel = localStorage.getItem('aliya_default_model');
+            if (cd30DefaultModel && opAgentModels.some(function(model) { return model.id === cd30DefaultModel; })) {
+                return cd30DefaultModel;
+            }
+        }
         if (opAgentDefaultModelId && opAgentModels.some(function(model) { return model.id === opAgentDefaultModelId; })) {
             return opAgentDefaultModelId;
         }
@@ -2997,7 +3080,8 @@ document.addEventListener("DOMContentLoaded", function (event) {
         var group = document.getElementById("cfgStyle");
         if (group) group.innerHTML = '<div class="op-image-loading"><span class="op-loading-spinner"></span><span>正在加载文风...</span></div>';
         try {
-            var data = await opFetchConversationAction("public_list");
+            // 只显示已加入列表（已订阅/可用）的文风，而不是广场全部公开文风
+            var data = await opFetchConversationAction("usable_list");
             if (data && !data.error && Array.isArray(data)) {
                 opStyles = data;
             } else {
@@ -3154,14 +3238,14 @@ document.addEventListener("DOMContentLoaded", function (event) {
     }
 
     function opCollectConfigPatch() {
-        // CD30特别版：从localStorage读取默认绘图模型
-        var cd30DefaultImageModel = localStorage.getItem('aliya_default_image_model') || 'aob0wkxmi3';
+        // CD30特别版：使用CD30默认模型
+        var cd30DefaultModel = window.CD30Special ? (localStorage.getItem('aliya_default_model') || '') : '';
+        var cd30DefaultImageModel = window.CD30Special ? (localStorage.getItem('aliya_default_image_model') || '') : '';
+        
         var config = {
-            img_size: opGetChoiceValue("cfgImgSize", "landscape"),
-            img_artist_preset_id: opGetChoiceValue("cfgImgArtistPresetId", "default-anime"),
-            agent_image_model_id: opGetChoiceValue("cfgAgentImageModel", cd30DefaultImageModel),
             agent_vision_model_id: (document.getElementById("cfgAgentVisionModel") || {}).value || "",
-            segmented_output_enabled: segConfig.enabled === true,
+            // CD30特别版：创建会话时强制默认开启分段输出，避免被旧会话状态覆盖
+            segmented_output_enabled: window.CD30Special ? true : segConfig.enabled === true,
             time_awareness_enabled: opTimeAwarenessToggle?.checked === true,
             random_proactive_enabled: opRandomProactiveEnabled === true,
             scheduled_proactive_enabled: opScheduledProactiveEnabled === true,
@@ -3170,11 +3254,29 @@ document.addEventListener("DOMContentLoaded", function (event) {
                 return active ? active.getAttribute("data-value") : "";
             })()
         };
-        if (opAgentModels.length > 0) {
+        
+        // CD30特别版：始终使用CD30默认模型
+        if (window.CD30Special && cd30DefaultModel) {
+            config.agent_model_id = cd30DefaultModel;
+        } else if (opAgentModels.length > 0) {
             var defaultAgentModelId = opResolvedAgentDefaultModelId();
             var pickedAgentModelId = opGetChoiceValue("cfgAgentModel", defaultAgentModelId);
             config.agent_model_id = pickedAgentModelId && pickedAgentModelId !== defaultAgentModelId ? pickedAgentModelId : "";
         }
+        
+        // CD30特别版：始终使用CD30默认绘图模型
+        if (window.CD30Special && cd30DefaultImageModel) {
+            config.agent_image_model_id = cd30DefaultImageModel;
+        } else {
+            config.agent_image_model_id = opGetChoiceValue("cfgAgentImageModel", 'aob0wkxmi3');
+        }
+        
+        // 只在非默认值时添加图片设置
+        var imgSize = opGetChoiceValue("cfgImgSize", "landscape");
+        var imgArtistPresetId = opGetChoiceValue("cfgImgArtistPresetId", "default-anime");
+        if (imgSize !== "landscape") config.img_size = imgSize;
+        if (imgArtistPresetId !== "default-anime") config.img_artist_preset_id = imgArtistPresetId;
+        
         return config;
     }
 
@@ -3231,11 +3333,13 @@ document.addEventListener("DOMContentLoaded", function (event) {
     function opConfigPatchFromServer(data) {
         var imgSettings = data && data.agentImageSettings || {};
         return {
+            // 显示服务器真实状态，避免UI假象；默认模型在创建会话时应用
             agent_model_id: data && data.agentModelId || "",
             agent_image_model_id: data && data.agentImageModelId || "",
             agent_vision_model_id: data && data.agentVisionModelId || "",
             img_size: imgSettings.size || "landscape",
             img_artist_preset_id: imgSettings.artistPresetId || "default-anime",
+            // 显示服务器真实状态，避免UI假象；默认配置在创建会话时应用
             segmented_output_enabled: !!(data && data.segmentedOutputEnabled === true),
             time_awareness_enabled: !(data && data.timeAwarenessEnabled === false),
             random_proactive_enabled: !!(data && data.randomProactiveEnabled === true),
@@ -3268,6 +3372,28 @@ document.addEventListener("DOMContentLoaded", function (event) {
         opApplyConfigPatchToControls(safePatch);
         opConfigLoadedSessionId = opCurrentSessionId;
         opSyncMemorySettingsLink();
+        
+        // CD30特别版：自动修正默认配置并保存到服务器（旧会话也应用默认）
+        if (window.CD30Special && sessionId) {
+            var cd30Patch = {};
+            var cd30DefaultModel = localStorage.getItem('aliya_default_model') || '';
+            var cd30DefaultImageModel = localStorage.getItem('aliya_default_image_model') || '';
+            if (cd30DefaultModel && opDesiredConfig.agent_model_id !== cd30DefaultModel) {
+                cd30Patch.agent_model_id = cd30DefaultModel;
+            }
+            if (cd30DefaultImageModel && opDesiredConfig.agent_image_model_id !== cd30DefaultImageModel) {
+                cd30Patch.agent_image_model_id = cd30DefaultImageModel;
+            }
+            if (opDesiredConfig.segmented_output_enabled !== true) {
+                cd30Patch.segmented_output_enabled = true;
+            }
+            if (Object.keys(cd30Patch).length) {
+                // 立即更新UI显示，并同步保存到服务器
+                opApplyConfigPatchToControls(cd30Patch);
+                opQueueConfigPatch(cd30Patch);
+            }
+        }
+        
         if (data.ruleOverrides && typeof data.ruleOverrides === "object" && !Array.isArray(data.ruleOverrides)) {
             opRuleOverrides = Object.assign({}, data.ruleOverrides);
         } else {
@@ -3758,6 +3884,21 @@ document.addEventListener("DOMContentLoaded", function (event) {
     }
 
     async function bootstrap() {
+        // CD30特别版：跳过原有Misskey授权流程，使用简化认证
+        if (window.CD30Special) {
+            // CD30特别版已处理认证，直接启动应用
+            loadSegConfig();
+            // 使用CD30的Misskey token，统一存储在aliya_msk_token中
+            mskToken = localStorage.getItem('aliya_msk_token') || '';
+            if (mskToken) {
+                await startConnectedApp();
+            } else {
+                // token不存在，可能是CD30认证还未完成，等待CD30处理
+                console.log('CD30模式：等待认证完成...');
+            }
+            return;
+        }
+        
         loadSegConfig();
         loadToken();
 

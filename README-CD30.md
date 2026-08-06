@@ -47,6 +47,12 @@ start-cd30.bat
 .\start-cd30.ps1
 ```
 
+### Linux / macOS
+```bash
+chmod +x start-cd30.sh   # 首次使用需添加可执行权限
+./start-cd30.sh
+```
+
 ### 手动配置
 1. 复制 `.env.cd30` 为 `.env`
 2. 修改环境变量配置
@@ -59,9 +65,9 @@ start-cd30.bat
 | CD30_ACCESS_PASSWORD | 展区访问密码 | cd30aliyaweb |
 | CD30_REMOTE_API_KEY | 远程API密钥 | - |
 | CD30_DEFAULT_MODEL | 默认对话模型 | akqrsc9j5u |
-| CD30_DEFAULT_IMAGE_MODEL | 默认绘图模型 | nai-diffusion-4-5-full |
+| CD30_DEFAULT_IMAGE_MODEL | 默认绘图模型（内部ID） | aob0wkxmi3 |
 | ALIYA_HOST | 监听地址 | 0.0.0.0 |
-| ALIYA_PORT | 监听端口 | 4000 |
+| ALIYA_PORT | 监听端口 | 47653 |
 
 ## 展区部署建议
 
@@ -80,7 +86,7 @@ start-cd30.bat
 
 1. 本版本为玩家二创，与官方无关
 2. 仅供CD30漫展现场展示使用
-3. 正式版请访问：https://docs.linminaslelves.top
+3. 正式版请访问：https://docs.liminalselves.top
 
 ## 技术支持
 

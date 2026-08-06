@@ -1,4 +1,5 @@
-/* CD30瞳电游工作室展区特别版样式 */
+/* CD30瞳电游工作室展区特别版样式 - 与Aliya Web UI风格统一 */
+/* 注意：原有CSS使用 html { font-size: 6px; }，所以 1rem = 6px */
 
 /* ==================== 顶部横幅 ==================== */
 #cd30-banner {
@@ -6,22 +7,15 @@
     top: 0;
     left: 0;
     right: 0;
-    background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
-    color: #fff;
-    padding: 12px 20px;
+    background: #2d2d2d;
+    border-bottom: 1px solid #444;
+    color: #efefef;
+    padding: 2rem 3rem; /* 12px 18px */
     z-index: 10000;
-    box-shadow: 0 2px 10px rgba(0,0,0,0.3);
-    animation: cd30-banner-slide 0.5s ease-out;
-}
-
-@keyframes cd30-banner-slide {
-    from { transform: translateY(-100%); }
-    to { transform: translateY(0); }
-}
-
-#cd30-banner.cd30-banner-hidden {
-    transform: translateY(-100%);
-    transition: transform 0.3s ease-in;
+    box-shadow: 0 0.3rem 1.5rem rgba(0,0,0,0.3);
+    min-height: 4rem; /* 24px */
+    display: flex;
+    align-items: center;
 }
 
 .cd30-banner-content {
@@ -30,34 +24,36 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    gap: 15px;
+    gap: 2.5rem; /* 15px */
     flex-wrap: wrap;
     position: relative;
+    width: 100%;
 }
 
 .cd30-banner-badge {
-    background: #e94560;
+    background: #d6740b;
     color: #fff;
-    padding: 4px 12px;
-    border-radius: 20px;
-    font-size: 14px;
-    font-weight: bold;
+    padding: 0.7rem 2rem; /* 4.2px 12px */
+    border-radius: 1rem; /* 6px */
+    font-size: 2rem; /* 12px */
+    font-weight: 600;
     white-space: nowrap;
 }
 
 .cd30-banner-text {
-    font-size: 15px;
+    font-size: 2.3rem; /* 13.8px */
     line-height: 1.5;
+    color: #c1c1c1;
 }
 
 .cd30-banner-text a {
-    color: #00d9ff;
-    text-decoration: underline;
+    color: #d6740b;
+    text-decoration: none;
     transition: color 0.2s;
 }
 
 .cd30-banner-text a:hover {
-    color: #7df9ff;
+    color: #e8841b;
 }
 
 .cd30-banner-close {
@@ -66,51 +62,81 @@
     background: none;
     border: none;
     color: #888;
-    font-size: 24px;
+    font-size: 3.5rem; /* 21px */
     cursor: pointer;
-    padding: 0 5px;
+    padding: 0 1rem;
     line-height: 1;
     transition: color 0.2s;
 }
 
 .cd30-banner-close:hover {
-    color: #fff;
+    color: #efefef;
+}
+
+/* 横幅隐藏时的过渡动画 */
+#cd30-banner.cd30-banner-hidden {
+    transform: translateY(-100%);
+    transition: transform 0.3s ease-in;
+}
+
+/* 横幅显示时，主内容区域下移，避免遮挡导航栏 */
+body.cd30-banner-visible .new-page.visible {
+    margin-top: 8rem;
+}
+
+body:not(.cd30-banner-visible) .new-page.visible {
+    margin-top: 0;
+}
+
+/* 横幅显示时，调整内容区域高度，确保发送按钮可见 */
+body.cd30-banner-visible .new-page.visible .content_1 {
+    height: calc(90vh - 8rem);
+}
+
+body:not(.cd30-banner-visible) .new-page.visible .content_1 {
+    height: 90vh;
 }
 
 /* ==================== 状态显示区域 ==================== */
-.cd30-status-item {
+.cd30-status-container {
     position: fixed;
-    background: rgba(0, 0, 0, 0.75);
-    color: #fff;
-    padding: 10px 16px;
-    border-radius: 8px;
-    font-size: 14px;
+    top: 9rem; /* 54px - 横幅高度 + 间距 */
+    right: 3rem; /* 18px */
+    display: flex;
+    flex-direction: column;
+    gap: 1.2rem; /* 7.2px */
     z-index: 9999;
-    backdrop-filter: blur(4px);
-    border: 1px solid rgba(255,255,255,0.1);
+    pointer-events: none; /* 允许点击穿透 */
+}
+
+.cd30-status-item {
+    background: #2d2d2d;
+    border: 1px solid #444;
+    color: #efefef;
+    padding: 1rem 2rem; /* 6px 12px */
+    border-radius: 1.2rem; /* 7.2px */
+    font-size: 2rem; /* 12px */
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: 1rem; /* 6px */
+    box-shadow: 0 0.3rem 1.2rem rgba(0,0,0,0.3);
+    pointer-events: auto; /* 恢复点击 */
 }
 
-#cd30-turns-display {
-    top: 70px;
-    right: 20px;
-}
-
-#cd30-privacy-display {
-    top: 120px;
-    right: 20px;
-}
+/* 状态区域排列顺序：剩余轮数 → 重置倒计时 → 重新开始对话 */
+#cd30-turns-display { order: 1; }
+#cd30-privacy-display { order: 2; }
+.cd30-btn-restart { order: 3; }
 
 .cd30-status-label {
-    color: #aaa;
+    color: #888;
+    font-size: 1.8rem; /* 10.8px */
 }
 
 .cd30-status-value {
-    font-weight: bold;
-    color: #00d9ff;
-    font-size: 16px;
+    font-weight: 600;
+    color: #d6740b;
+    font-size: 2.2rem; /* 13.2px */
 }
 
 .cd30-status-item.cd30-warning .cd30-status-value {
@@ -127,227 +153,276 @@
     50% { opacity: 0.6; }
 }
 
+/* ==================== 轮数上限内联提示（替换输入框，不弹窗遮挡消息） ==================== */
+.cd30-limit-banner {
+    display: none;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 1.8rem;
+    padding: 2.5rem 2rem;
+    color: #c66908;
+    font-size: 2.2rem;
+    text-align: center;
+    width: 100%;
+    box-sizing: border-box;
+}
+
+body.cd30-limit-reached .player-compose-row,
+body.cd30-limit-reached #sendBtn {
+    display: none !important;
+}
+
+body.cd30-limit-reached .cd30-limit-banner {
+    display: flex;
+}
+
+/* 达到上限时隐藏右下角的重开按钮，避免遮挡提示条 */
+body.cd30-limit-reached .cd30-btn-restart {
+    display: none;
+}
+
+.cd30-limit-text {
+    line-height: 1.6;
+    color: #c66908;
+}
+
+.cd30-limit-banner .cd30-btn {
+    flex-shrink: 0;
+}
+
 /* ==================== 认证对话框 ==================== */
 .cd30-auth-overlay {
     position: fixed;
     inset: 0;
-    background: rgba(0, 0, 0, 0.9);
+    background: rgba(0, 0, 0, 0.85);
     display: flex;
     justify-content: center;
     align-items: center;
     z-index: 20000;
+    padding: 3rem;
+    box-sizing: border-box;
 }
 
 .cd30-auth-panel {
-    background: #1a1a2e;
-    border: 1px solid #333;
-    border-radius: 16px;
-    padding: 40px;
+    background: #2d2d2d;
+    border: 1px solid #555;
+    border-radius: 2rem; /* 12px */
+    padding: 5rem 5.5rem; /* 30px 33px */
     text-align: center;
-    max-width: 400px;
-    width: 90%;
-    box-shadow: 0 10px 40px rgba(0,0,0,0.5);
+    max-width: 70rem; /* 420px */
+    width: 100%;
+    box-sizing: border-box;
 }
 
 .cd30-auth-panel h2 {
-    color: #fff;
-    font-size: 24px;
-    margin-bottom: 10px;
+    color: #efefef;
+    font-size: 4rem; /* 24px */
+    margin-bottom: 1.5rem;
+    font-weight: normal;
 }
 
 .cd30-auth-panel p {
-    color: #888;
-    margin-bottom: 20px;
+    color: #bebebe;
+    font-size: 2.5rem; /* 15px */
+    margin-bottom: 3rem;
 }
 
 .cd30-auth-panel input {
     width: 100%;
-    padding: 14px 18px;
+    padding: 1.7rem 2.5rem; /* 10.2px 15px */
     border: 1px solid #444;
-    border-radius: 8px;
-    background: #0f0f1a;
-    color: #fff;
-    font-size: 16px;
-    margin-bottom: 15px;
+    border-radius: 1.2rem; /* 7.2px */
+    background: #202020;
+    color: #efefef;
+    font-size: 2.7rem; /* 16.2px */
+    margin-bottom: 2.5rem;
     box-sizing: border-box;
     outline: none;
     transition: border-color 0.2s;
 }
 
 .cd30-auth-panel input:focus {
-    border-color: #00d9ff;
+    border-color: #d6740b;
 }
 
 .cd30-auth-error {
-    color: #e74c3c;
-    font-size: 14px;
-    min-height: 20px;
-    margin-bottom: 15px;
+    color: #c66908;
+    font-size: 2.3rem; /* 13.8px */
+    min-height: 3rem;
+    margin-bottom: 2.5rem;
 }
 
 /* ==================== 模态框 ==================== */
 .cd30-modal-overlay {
     position: fixed;
     inset: 0;
-    background: rgba(0, 0, 0, 0.8);
+    background: rgba(0, 0, 0, 0.7);
     display: flex;
     justify-content: center;
     align-items: center;
     z-index: 15000;
-    animation: cd30-fade-in 0.3s ease;
-}
-
-@keyframes cd30-fade-in {
-    from { opacity: 0; }
-    to { opacity: 1; }
+    padding: 5rem;
+    box-sizing: border-box;
 }
 
 .cd30-modal {
-    background: #1a1a2e;
-    border: 1px solid #333;
-    border-radius: 16px;
-    padding: 30px;
-    max-width: 450px;
-    width: 90%;
+    background: #2d2d2d;
+    border: 1px solid #555;
+    border-radius: 2rem; /* 12px */
+    padding: 5rem 5.5rem; /* 30px 33px */
+    max-width: 80rem; /* 480px */
+    width: 100%;
     text-align: center;
-    box-shadow: 0 10px 40px rgba(0,0,0,0.5);
-    animation: cd30-scale-in 0.3s ease;
-}
-
-@keyframes cd30-scale-in {
-    from { transform: scale(0.9); opacity: 0; }
-    to { transform: scale(1); opacity: 1; }
+    box-sizing: border-box;
+    color: #efefef;
 }
 
 .cd30-modal h3 {
-    color: #fff;
-    font-size: 20px;
-    margin-bottom: 15px;
+    color: #efefef;
+    font-size: 3.3rem; /* 19.8px */
+    margin-bottom: 2.5rem;
+    font-weight: normal;
 }
 
 .cd30-modal p {
-    color: #aaa;
-    margin-bottom: 10px;
+    color: #bebebe;
+    font-size: 2.5rem; /* 15px */
+    margin-bottom: 1.7rem;
     line-height: 1.6;
 }
 
 /* ==================== 按钮样式 ==================== */
 .cd30-btn {
-    padding: 12px 28px;
-    border: none;
-    border-radius: 8px;
-    font-size: 16px;
+    border: 0;
+    border-radius: 1.2rem; /* 7.2px */
+    padding: 1.7rem 4rem; /* 10.2px 24px */
+    font-size: 2.7rem; /* 16.2px */
     cursor: pointer;
-    transition: all 0.2s;
-    font-weight: 500;
+    transition: background 0.2s, opacity 0.2s;
+    color: #efefef;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 1.2rem;
 }
 
 .cd30-btn-primary {
-    background: linear-gradient(135deg, #00d9ff 0%, #0099cc 100%);
-    color: #fff;
+    background: #d6740b;
 }
 
 .cd30-btn-primary:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 4px 12px rgba(0, 217, 255, 0.4);
+    background: #e8841b;
 }
 
+/* 重新开始对话按钮 - 位于状态显示区域内（右上角），不遮挡输入框 */
 .cd30-btn-restart {
-    position: fixed;
-    bottom: 30px;
-    right: 30px;
-    background: linear-gradient(135deg, #e94560 0%, #c73650 100%);
-    color: #fff;
-    padding: 14px 24px;
-    font-size: 15px;
-    z-index: 9998;
-    box-shadow: 0 4px 15px rgba(233, 69, 96, 0.4);
+    background: #d6740b;
+    color: #efefef;
+    padding: 1rem 2rem; /* 6px 12px */
+    font-size: 2rem; /* 12px */
+    box-shadow: 0 0.3rem 1.2rem rgba(0,0,0,0.3);
+    border-radius: 1.2rem;
+    border: none;
+    cursor: pointer;
+    transition: background 0.2s;
+    pointer-events: auto; /* 状态容器默认穿透，按钮恢复点击 */
+    white-space: nowrap;
 }
 
 .cd30-btn-restart:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 6px 20px rgba(233, 69, 96, 0.5);
+    background: #e8841b;
 }
 
 /* ==================== 使用说明指南 ==================== */
 .cd30-guide {
     text-align: left;
-    max-width: 500px;
+    max-width: 87rem; /* 522px */
 }
 
 .cd30-guide h3 {
     text-align: center;
-    margin-bottom: 20px;
+    margin-bottom: 3rem;
 }
 
 .cd30-guide-content {
-    margin-bottom: 20px;
+    margin-bottom: 3rem;
 }
 
 .cd30-guide-content ul {
-    margin: 10px 0;
-    padding-left: 20px;
-    color: #aaa;
+    margin: 1.7rem 0;
+    padding-left: 3.5rem;
+    color: #bebebe;
 }
 
 .cd30-guide-content li {
-    margin-bottom: 8px;
+    margin-bottom: 1.3rem;
     line-height: 1.5;
+    font-size: 2.3rem; /* 13.8px */
 }
 
 .cd30-guide-content p {
-    margin-bottom: 12px;
+    margin-bottom: 2rem;
+    font-size: 2.3rem; /* 13.8px */
+}
+
+.cd30-guide-content strong {
+    color: #efefef;
 }
 
 .cd30-guide .cd30-btn {
     display: block;
     width: 100%;
-    margin-top: 20px;
+    margin-top: 3rem;
 }
 
 /* ==================== 响应式调整 ==================== */
 @media (max-width: 768px) {
     .cd30-banner-content {
         flex-direction: column;
-        gap: 8px;
+        gap: 1rem;
         text-align: center;
+        padding: 0.8rem 0;
     }
     
     .cd30-banner-close {
         position: static;
-        margin-top: 5px;
+        margin-top: 0.5rem;
     }
     
-    #cd30-turns-display,
-    #cd30-privacy-display {
-        right: 10px;
-        font-size: 12px;
-        padding: 8px 12px;
+    .cd30-status-container {
+        top: 14rem; /* 84px */
+        right: 1.7rem;
     }
     
-    #cd30-turns-display { top: 100px; }
-    #cd30-privacy-display { top: 145px; }
+    body.cd30-banner-visible .new-page.visible {
+        margin-top: 13rem;
+    }
+    
+    body.cd30-banner-visible .new-page.visible .content_1 {
+        height: calc(90vh - 13rem);
+    }
+    
+    body:not(.cd30-banner-visible) .new-page.visible .content_1 {
+        height: 90vh;
+    }
+    
+    .cd30-status-item {
+        font-size: 1.7rem;
+        padding: 0.8rem 1.7rem;
+    }
     
     .cd30-btn-restart {
-        bottom: 20px;
-        right: 20px;
-        padding: 12px 20px;
-        font-size: 14px;
+        padding: 0.8rem 1.7rem;
+        font-size: 1.7rem;
     }
     
     .cd30-modal {
-        padding: 20px;
-        margin: 20px;
+        padding: 3.5rem;
+        margin: 3.5rem;
     }
-}
-
-/* ==================== 主内容区域调整 ==================== */
-body {
-    padding-top: 50px; /* 为顶部横幅留出空间 */
-}
-
-/* 确保原有内容不被横幅遮挡 */
-#mainContent,
-.new-page {
-    margin-top: 20px;
+    
+    .cd30-auth-panel {
+        padding: 3.5rem;
+    }
 }

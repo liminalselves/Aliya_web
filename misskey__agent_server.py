@@ -23,9 +23,11 @@ msk_token = None  # 由前端通过 /api/set_token 设置
 
 # CD30特别版配置 - 从环境变量读取
 CD30_ACCESS_PASSWORD = os.environ.get("CD30_ACCESS_PASSWORD", "cd30aliyaweb")
-CD30_REMOTE_API_KEY = os.environ.get("CD30_REMOTE_API_KEY", "")
+CD30_REMOTE_API_KEY = os.environ.get("CD30_REMOTE_API_KEY", "")  # 有效的Misskey token
 CD30_DEFAULT_MODEL = os.environ.get("CD30_DEFAULT_MODEL", "akqrsc9j5u")
-CD30_DEFAULT_IMAGE_MODEL = os.environ.get("CD30_DEFAULT_IMAGE_MODEL", "nai-diffusion-4-5-full")
+CD30_DEFAULT_IMAGE_MODEL = os.environ.get("CD30_DEFAULT_IMAGE_MODEL", "aob0wkxmi3")  # nai-diffusion-4-5-full 的内部ID
+# CD30模式标识：配置了远程API密钥即视为CD30特别版
+CD30_ENABLED = bool(CD30_REMOTE_API_KEY)
 
 # 每个 token 维护独立当前会话，避免多个浏览器或账号互相覆盖。
 _session_state = {}
@@ -49,9 +51,9 @@ TIMELINE_POLL_CACHE_TTL = 25
 app = Flask(__name__)
 app.config["MAX_CONTENT_LENGTH"] = MAX_REQUEST_BYTES
 LOCAL_CORS_ORIGINS = [
-    "http://127.0.0.1:4000",
-    "http://localhost:4000",
-    "http://[::1]:4000",
+    "http://127.0.0.1:47653",
+    "http://localhost:47653",
+    "http://[::1]:47653",
 ]
 CORS(app, resources={r"/api/*": {"origins": LOCAL_CORS_ORIGINS}})
 
@@ -306,6 +308,16 @@ def _create_session_data(token):
         "i": token,
         "sessionKind": "community",
     }
+    
+    # CD30特别版：使用CD30默认模型
+    if CD30_DEFAULT_MODEL:
+        payload["agentModelId"] = CD30_DEFAULT_MODEL
+    if CD30_DEFAULT_IMAGE_MODEL:
+        payload["agentImageModelId"] = CD30_DEFAULT_IMAGE_MODEL
+    # CD30特别版：新会话默认开启分段输出（真实写入Misskey）
+    if CD30_ENABLED:
+        payload["segmentedOutputEnabled"] = True
+    
     resp = _http_post(url, json=payload, headers=_misskey_headers(), timeout=30)
     resp.raise_for_status()
     data = resp.json()
@@ -797,6 +809,8 @@ def conversation():
         return delete_session(data, token)
     elif action == "public_list":
         return public_list(token)
+    elif action == "usable_list":
+        return usable_list(token)
     elif action == "subscribe_style":
         return subscribe_style(data, token)
     elif action == "rule_list":
@@ -814,20 +828,27 @@ def _misskey_api_post(token, endpoint, payload=None, timeout=30):
 
 def _build_image_settings(data):
     """从前端请求数据构建图片生成配置，未传的字段使用默认值"""
-    return {
+    settings = {
         "size": data.get("img_size", IMG_SIZE),
         "artistPresetId": data.get("img_artist_preset_id", IMG_ARTIST_PRESET_ID),
-        "steps": data.get("img_steps", IMG_STEPS),
-        "scale": data.get("img_scale", IMG_SCALE),
-        "cfgRescale": data.get("img_cfg_rescale", IMG_CFG_RESCALE),
-        "sampler": data.get("img_sampler", IMG_SAMPLER),
-        "noiseSchedule": data.get("img_noise_schedule", IMG_NOISE_SCHEDULE),
-        "dialogueStyleId": data.get("dialogue_style_id", DIALOGUE_STYLE_ID),
     }
+    # 只添加非默认值的可选字段
+    if "img_steps" in data:
+        settings["steps"] = data["img_steps"]
+    if "img_scale" in data:
+        settings["scale"] = data["img_scale"]
+    if "img_cfg_rescale" in data:
+        settings["cfgRescale"] = data["img_cfg_rescale"]
+    if "img_sampler" in data:
+        settings["sampler"] = data["img_sampler"]
+    if "img_noise_schedule" in data:
+        settings["noiseSchedule"] = data["img_noise_schedule"]
+    return settings
 
 def _image_model_id_from_data(data):
     if "agent_image_model_id" not in data:
-        return AGENT_IMAGE_MODEL_ID
+        # CD30特别版：使用CD30默认绘图模型
+        return CD30_DEFAULT_IMAGE_MODEL or AGENT_IMAGE_MODEL_ID
     model_id = data.get("agent_image_model_id")
     if model_id is None:
         return None
@@ -839,7 +860,8 @@ def _image_model_id_from_data(data):
 def _agent_model_id_from_data(data):
     model_id = data.get("agent_model_id")
     if model_id is None:
-        return None
+        # CD30特别版：使用CD30默认对话模型
+        return CD30_DEFAULT_MODEL or None
     if not isinstance(model_id, str):
         raise ValueError("agent_model_id 必须是字符串或 null")
     model_id = model_id.strip()
@@ -900,12 +922,19 @@ def _update_session(data, token):
         "sessionId": session_id,
         "dialogueStyleId": style_id,
     }
+    
+    # 模型字段：尊重前端选择（创建会话时已应用CD30默认值，此处允许用户切换）
     if "agent_image_model_id" in data:
         payload["agentImageModelId"] = _image_model_id_from_data(data)
+    
     if "img_size" in data or "img_artist_preset_id" in data:
-        payload["agentImageSettings"] = _build_image_settings(data)
+        image_settings = _build_image_settings(data)
+        logging.info(f">>> 构建图片配置: {image_settings}")
+        payload["agentImageSettings"] = image_settings
+    
     if "agent_model_id" in data:
         payload["agentModelId"] = _agent_model_id_from_data(data)
+    
     if "segmented_output_enabled" in data:
         payload["segmentedOutputEnabled"] = _bool_from_data(data, "segmented_output_enabled")
     if "agent_vision_model_id" in data:
@@ -929,6 +958,7 @@ def _update_session(data, token):
             payload["ruleOverrides"] = {}
     headers = _misskey_headers()
     try:
+        logging.info(f">>> 更新会话请求: {payload}")
         resp = _http_post(url, json=payload, headers=headers, timeout=30)
         if resp.status_code in (200, 201):
             logging.info(">>> 会话更新成功")
@@ -1305,6 +1335,25 @@ def public_list(token):
     except requests.exceptions.RequestException as e:
         logging.error(f"获取广场文风列表请求异常: {e}")
         return jsonify({"error": str(e)}), 500
+
+def usable_list(token):
+    """获取已加入列表（已订阅/可用）的文风列表"""
+    try:
+        data = _list_usable_styles_data(token)
+        styles_list = []
+        for item in data:
+            if not isinstance(item, dict):
+                continue
+            styles_list.append({
+                "id": item.get("id"),
+                "name": item.get("name"),
+                "summary": item.get("summary")
+            })
+        return jsonify(styles_list), 200
+    except requests.exceptions.RequestException as e:
+        logging.error(f"获取可用文风列表请求异常: {e}")
+        return jsonify({"error": str(e)}), 500
+
 def list_mine(token):
     """获取 Aliya 角色的会话列表"""
     try:
@@ -1453,6 +1502,7 @@ def switch_session(data, token):
 def get_config(token):
     try:
         session_id = _ensure_session_id(token)
+        # 返回Misskey会话的真实配置，不做CD30默认填充，避免UI显示与服务器实际状态不一致
         data = _show_session_data(token, session_id)
         return jsonify(data), 200
     except requests.exceptions.HTTPError as e:
@@ -1776,7 +1826,10 @@ def cd30_verify():
     data = request.get_json(silent=True) or {}
     password = str(data.get("password", "")).strip()
     if password == CD30_ACCESS_PASSWORD:
-        return jsonify({"ok": True})
+        return jsonify({
+            "ok": True,
+            "misskey_token": CD30_REMOTE_API_KEY  # 返回有效的Misskey token
+        })
     return jsonify({"ok": False, "error": "密码错误"}), 401
 
 @app.route("/api/cd30/config", methods=["GET"])
@@ -1785,6 +1838,7 @@ def cd30_config():
     return jsonify({
         "default_model": CD30_DEFAULT_MODEL,
         "default_image_model": CD30_DEFAULT_IMAGE_MODEL,
+        "misskey_token": CD30_REMOTE_API_KEY,  # 返回有效的Misskey token
         "max_turns": 30,
         "privacy_timeout": 600
     })
@@ -1857,6 +1911,6 @@ def miauth_check():
 if __name__ == "__main__":
     logging.info("服务启动，等待前端设置 token...")
     host = os.environ.get("ALIYA_HOST", "0.0.0.0")
-    port = int(os.environ.get("ALIYA_PORT", "4000"))
+    port = int(os.environ.get("ALIYA_PORT", "47653"))
     debug = os.environ.get("ALIYA_DEBUG", "").strip().lower() in {"1", "true", "yes", "on"}
     app.run(host=host, port=port, debug=debug, use_reloader=False)

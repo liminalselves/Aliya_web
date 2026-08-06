@@ -25,9 +25,9 @@ REM 设置环境变量
 set CD30_ACCESS_PASSWORD=cd30aliyaweb
 set CD30_REMOTE_API_KEY=yGMjJwKW3qkrtNfJ7ydJXcFZhOjKYuGc
 set CD30_DEFAULT_MODEL=akqrsc9j5u
-set CD30_DEFAULT_IMAGE_MODEL=nai-diffusion-4-5-full
+set CD30_DEFAULT_IMAGE_MODEL=aob0wkxmi3
 set ALIYA_HOST=0.0.0.0
-set ALIYA_PORT=4000
+set ALIYA_PORT=47653
 set ALIYA_DEBUG=false
 
 echo.

@@ -8,8 +8,8 @@
 
     // ==================== 配置常量 ====================
     const CD30_CONFIG = {
-        MAX_TURNS: 30,
-        PRIVACY_TIMEOUT: 10 * 60 * 1000, // 10分钟
+        MAX_TURNS: 30, // 每个会话最多30轮对话
+        PRIVACY_TIMEOUT: 30 * 60 * 1000, // 30分钟无操作自动清除
         AUTH_KEY: 'cd30_auth_verified',
         TURNS_KEY: 'cd30_current_turns',
         SESSION_KEY: 'cd30_session_id',
@@ -24,7 +24,12 @@
             localStorage.setItem(CD30_CONFIG.SEGMENT_KEY, 'true');
         }
         
-        // 从服务器获取默认模型配置并应用
+        // 立即设置默认模型（硬编码，确保可用）
+        localStorage.setItem('aliya_default_model', 'akqrsc9j5u');
+        // nai-diffusion-4-5-full 的内部ID是 aob0wkxmi3
+        localStorage.setItem('aliya_default_image_model', 'aob0wkxmi3');
+        
+        // 从服务器获取最新配置并更新（异步，不阻塞）
         fetch('/api/cd30/config')
             .then(res => res.json())
             .then(config => {
@@ -48,7 +53,7 @@
                 <span class="cd30-banner-badge">CD30特别版</span>
                 <span class="cd30-banner-text">
                     CD30瞳电游工作室展区特别版 | 
-                    <a href="https://docs.linminaslelves.top" target="_blank" rel="noopener noreferrer">正式版请访问文档</a> | 
+                    正式版请访问<a href="https://docs.liminalselves.top" target="_blank" rel="noopener noreferrer">文档</a> | 
                     玩家二创，与官方无关！
                 </span>
                 <button class="cd30-banner-close" aria-label="关闭横幅">&times;</button>
@@ -56,9 +61,13 @@
         `;
         document.body.insertBefore(banner, document.body.firstChild);
         
+        // 添加body类名，控制主内容区域下移
+        document.body.classList.add('cd30-banner-visible');
+            
         // 关闭按钮事件
         banner.querySelector('.cd30-banner-close').addEventListener('click', function() {
             banner.classList.add('cd30-banner-hidden');
+            document.body.classList.remove('cd30-banner-visible');
             setTimeout(() => banner.remove(), 300);
         });
     }
@@ -96,12 +105,20 @@
         },
         
         updateDisplay() {
+            // 确保状态容器存在
+            let container = document.querySelector('.cd30-status-container');
+            if (!container) {
+                container = document.createElement('div');
+                container.className = 'cd30-status-container';
+                document.body.appendChild(container);
+            }
+            
             let display = document.getElementById('cd30-turns-display');
             if (!display) {
                 display = document.createElement('div');
                 display.id = 'cd30-turns-display';
                 display.className = 'cd30-status-item';
-                document.body.appendChild(display);
+                container.appendChild(display);
             }
             display.innerHTML = `<span class="cd30-status-label">剩余</span><span class="cd30-status-value">${this.getRemaining()}轮</span>`;
             
@@ -114,17 +131,37 @@
         },
         
         onLimitReached() {
-            const modal = document.createElement('div');
-            modal.className = 'cd30-modal-overlay';
-            modal.innerHTML = `
-                <div class="cd30-modal">
-                    <h3>对话轮数已达上限</h3>
-                    <p>本次会话已达到最大对话轮数（${CD30_CONFIG.MAX_TURNS}轮）。</p>
-                    <p>点击"开始新会话"按钮继续体验。</p>
-                    <button class="cd30-btn cd30-btn-primary" onclick="CD30Special.startNewSession()">开始新会话</button>
-                </div>
-            `;
-            document.body.appendChild(modal);
+            // 不弹窗遮挡消息，改为在输入框区域显示内联提示
+            if (document.body.classList.contains('cd30-limit-reached')) return;
+            document.body.classList.add('cd30-limit-reached');
+            
+            // 禁用输入控件
+            const playerInput = document.getElementById('playerInput');
+            if (playerInput) playerInput.disabled = true;
+            const sendBtn = document.getElementById('sendBtn');
+            if (sendBtn) sendBtn.disabled = true;
+            
+            // 在输入区域插入提示条（替换输入框显示，不遮挡消息）
+            let banner = document.getElementById('cd30-limit-banner');
+            if (!banner) {
+                banner = document.createElement('div');
+                banner.id = 'cd30-limit-banner';
+                banner.className = 'cd30-limit-banner';
+                banner.innerHTML = `
+                    <span class="cd30-limit-text">本次会话已达到最大对话轮数（${CD30_CONFIG.MAX_TURNS}轮）</span>
+                    <button class="cd30-btn cd30-btn-primary" id="cd30-limit-restart-btn">开始新会话</button>
+                `;
+                const inputArea = document.getElementById('playerInputArea');
+                if (inputArea) {
+                    inputArea.appendChild(banner);
+                } else {
+                    document.body.appendChild(banner);
+                }
+                // 绑定按钮事件
+                document.getElementById('cd30-limit-restart-btn').addEventListener('click', function() {
+                    window.CD30Special.startNewSession();
+                });
+            }
         }
     };
 
@@ -163,19 +200,27 @@
         },
         
         updateDisplay() {
+            // 确保状态容器存在
+            let container = document.querySelector('.cd30-status-container');
+            if (!container) {
+                container = document.createElement('div');
+                container.className = 'cd30-status-container';
+                document.body.appendChild(container);
+            }
+            
             let display = document.getElementById('cd30-privacy-display');
             if (!display) {
                 display = document.createElement('div');
                 display.id = 'cd30-privacy-display';
                 display.className = 'cd30-status-item cd30-privacy';
-                document.body.appendChild(display);
+                container.appendChild(display);
             }
             
             const minutes = Math.floor(this.remaining / 60000);
             const seconds = Math.floor((this.remaining % 60000) / 1000);
             const timeStr = `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
             
-            display.innerHTML = `<span class="cd30-status-label">隐私保护倒计时</span><span class="cd30-status-value">${timeStr}</span>`;
+            display.innerHTML = `<span class="cd30-status-label">重置倒计时</span><span class="cd30-status-value">${timeStr}</span>`;
             
             // 最后1分钟警告
             if (this.remaining <= 60000) {
@@ -208,10 +253,15 @@
                     <h3>隐私保护已启动</h3>
                     <p>检测到长时间无操作，已自动清除对话历史。</p>
                     <p>保护前一位用户的隐私安全。</p>
-                    <button class="cd30-btn cd30-btn-primary" onclick="CD30Special.startNewSession()">开始新会话</button>
+                    <button class="cd30-btn cd30-btn-primary" id="cd30-privacy-restart-btn">开始新会话</button>
                 </div>
             `;
             document.body.appendChild(modal);
+            
+            // 绑定按钮事件
+            document.getElementById('cd30-privacy-restart-btn').addEventListener('click', function() {
+                window.CD30Special.startNewSession();
+            });
         }
     };
 
@@ -219,6 +269,8 @@
     const SimpleAuth = {
         init() {
             if (this.isAuthenticated()) {
+                // 已认证，确保API密钥存在
+                this.ensureApiKey();
                 return true;
             }
             this.showAuthDialog();
@@ -227,6 +279,31 @@
         
         isAuthenticated() {
             return localStorage.getItem(CD30_CONFIG.AUTH_KEY) === 'true';
+        },
+        
+        ensureApiKey() {
+            // 如果已有Misskey token则跳过
+            const existingToken = localStorage.getItem('aliya_msk_token');
+            if (existingToken) {
+                // 同步更新index.js中的mskToken变量
+                if (typeof mskToken !== 'undefined') {
+                    mskToken = existingToken;
+                }
+                return;
+            }
+            // 从服务器获取Misskey token
+            fetch('/api/cd30/config')
+                .then(res => res.json())
+                .then(config => {
+                    if (config.misskey_token) {
+                        localStorage.setItem('aliya_msk_token', config.misskey_token);
+                        // 同步更新index.js中的mskToken变量
+                        if (typeof mskToken !== 'undefined') {
+                            mskToken = config.misskey_token;
+                        }
+                    }
+                })
+                .catch(err => console.log('获取Misskey token失败:', err));
         },
         
         showAuthDialog() {
@@ -238,10 +315,15 @@
                     <p>请输入展区访问密码</p>
                     <input type="password" id="cd30-password" placeholder="请输入密码" autocomplete="off">
                     <div class="cd30-auth-error" id="cd30-auth-error"></div>
-                    <button class="cd30-btn cd30-btn-primary" onclick="CD30Special.verifyPassword()">验证</button>
+                    <button class="cd30-btn cd30-btn-primary" id="cd30-verify-btn">验证</button>
                 </div>
             `;
             document.body.appendChild(overlay);
+            
+            // 绑定验证按钮事件
+            document.getElementById('cd30-verify-btn').addEventListener('click', function() {
+                window.CD30Special.verifyPassword();
+            });
             
             // 回车提交
             document.getElementById('cd30-password').addEventListener('keypress', function(e) {
@@ -266,9 +348,26 @@
             .then(data => {
                 if (data.ok) {
                     localStorage.setItem(CD30_CONFIG.AUTH_KEY, 'true');
+                    // 设置Misskey token，供原有逻辑使用
+                    const token = data.misskey_token || '';
+                    localStorage.setItem('aliya_msk_token', token);
+                    // 同步更新index.js中的mskToken变量
+                    if (typeof mskToken !== 'undefined') {
+                        mskToken = token;
+                    }
                     document.querySelector('.cd30-auth-overlay').remove();
+                    // 确保连接界面可见
+                    const mainContent = document.getElementById('mainContent');
+                    if (mainContent) {
+                        mainContent.style.display = 'flex';
+                        mainContent.style.opacity = '1';
+                    }
                     // 初始化其他功能
                     window.CD30Special.initFeatures();
+                    // 触发原有应用启动
+                    if (typeof bootstrap === 'function') {
+                        bootstrap();
+                    }
                 } else {
                     error.textContent = '密码错误，请重试';
                     input.value = '';
@@ -293,27 +392,45 @@
                 <div class="cd30-guide-content">
                     <p><strong>本版本为漫展展示专用，具有以下特点：</strong></p>
                     <ul>
-                        <li>每次会话最多30轮对话</li>
-                        <li>10分钟无操作自动清除记录</li>
+                        <li>每次会话最多${CD30_CONFIG.MAX_TURNS}轮对话</li>
+                        <li>${Math.round(CD30_CONFIG.PRIVACY_TIMEOUT / 60000)}分钟无操作自动清除记录</li>
                         <li>保护每位观众的隐私安全</li>
                     </ul>
                     <p><strong>隐私保护说明：</strong></p>
-                    <p>系统会在您停止操作10分钟后自动清除对话内容，确保下一位观众不会看到您的对话记录。</p>
+                    <p>系统会在您停止操作${Math.round(CD30_CONFIG.PRIVACY_TIMEOUT / 60000)}分钟后自动清除对话内容，确保下一位观众不会看到您的对话记录。</p>
                 </div>
-                <button class="cd30-btn cd30-btn-primary" onclick="this.closest('.cd30-modal-overlay').remove(); localStorage.setItem('cd30_guide_shown', 'true');">我知道了</button>
+                <button class="cd30-btn cd30-btn-primary" id="cd30-guide-ok-btn">我知道了</button>
             </div>
         `;
         document.body.appendChild(modal);
+        
+        // 绑定按钮事件
+        document.getElementById('cd30-guide-ok-btn').addEventListener('click', function() {
+            modal.remove();
+            localStorage.setItem('cd30_guide_shown', 'true');
+        });
     }
 
     // ==================== 重新开始按钮 ====================
     function createRestartButton() {
+        // 确保状态容器存在
+        let container = document.querySelector('.cd30-status-container');
+        if (!container) {
+            container = document.createElement('div');
+            container.className = 'cd30-status-container';
+            document.body.appendChild(container);
+        }
+        // 避免重复创建
+        if (document.getElementById('cd30-restart-btn')) return;
         const btn = document.createElement('button');
         btn.id = 'cd30-restart-btn';
         btn.className = 'cd30-btn cd30-btn-restart';
         btn.innerHTML = '重新开始对话';
-        btn.onclick = () => window.CD30Special.startNewSession();
-        document.body.appendChild(btn);
+        btn.addEventListener('click', function() {
+            window.CD30Special.startNewSession();
+        });
+        // 添加到状态显示区域（右上角，剩余轮数和倒计时下方），不遮挡输入框
+        container.appendChild(btn);
     }
 
     // ==================== 主入口 ====================
@@ -322,6 +439,12 @@
             // 先检查认证
             if (!SimpleAuth.init()) {
                 return;
+            }
+            // 已认证用户，确保连接界面可见
+            const mainContent = document.getElementById('mainContent');
+            if (mainContent) {
+                mainContent.style.display = 'flex';
+                mainContent.style.opacity = '1';
             }
             this.initFeatures();
         },
@@ -349,9 +472,35 @@
             localStorage.removeItem(CD30_CONFIG.SESSION_KEY);
             // 移除所有模态框
             document.querySelectorAll('.cd30-modal-overlay').forEach(m => m.remove());
-            // 刷新页面或触发新会话
-            if (typeof startNewChatSession === 'function') {
-                startNewChatSession();
+            // 移除轮数上限提示状态
+            document.body.classList.remove('cd30-limit-reached');
+            const limitBanner = document.getElementById('cd30-limit-banner');
+            if (limitBanner) limitBanner.remove();
+            // 恢复输入控件
+            const playerInput = document.getElementById('playerInput');
+            if (playerInput) playerInput.disabled = false;
+            const sendBtn = document.getElementById('sendBtn');
+            if (sendBtn) sendBtn.disabled = false;
+            // 移除状态显示
+            const statusContainer = document.querySelector('.cd30-status-container');
+            if (statusContainer) statusContainer.remove();
+            // 移除重新开始按钮
+            const restartBtn = document.getElementById('cd30-restart-btn');
+            if (restartBtn) restartBtn.remove();
+            
+            // 删除当前会话（服务器端），确保重新连接时创建全新会话
+            const token = localStorage.getItem('aliya_msk_token') || '';
+            if (token) {
+                fetch('/api/conversation', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ action: 'delete_session', token: token })
+                })
+                .catch(err => console.log('删除会话失败:', err))
+                .finally(() => {
+                    // 无论删除成功与否，都刷新页面回到连接页
+                    location.reload();
+                });
             } else {
                 location.reload();
             }
@@ -370,7 +519,9 @@
 
     // 页面加载完成后初始化
     if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', () => window.CD30Special.init());
+        document.addEventListener('DOMContentLoaded', function() {
+            window.CD30Special.init();
+        });
     } else {
         window.CD30Special.init();
     }

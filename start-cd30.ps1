@@ -28,9 +28,9 @@ if (-not $flaskInstalled) {
 $env:CD30_ACCESS_PASSWORD = "cd30aliyaweb"
 $env:CD30_REMOTE_API_KEY = "yGMjJwKW3qkrtNfJ7ydJXcFZhOjKYuGc"
 $env:CD30_DEFAULT_MODEL = "akqrsc9j5u"
-$env:CD30_DEFAULT_IMAGE_MODEL = "nai-diffusion-4-5-full"
+$env:CD30_DEFAULT_IMAGE_MODEL = "aob0wkxmi3"
 $env:ALIYA_HOST = "0.0.0.0"
-$env:ALIYA_PORT = "4000"
+$env:ALIYA_PORT = "47653"
 $env:ALIYA_DEBUG = "false"
 
 Write-Host ""
