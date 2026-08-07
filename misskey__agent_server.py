@@ -881,9 +881,10 @@ def _create_session(token):
 
 def _update_session(data, token):
     """向 Misskey 更新会话"""
-    style_id = data.get("dialogueStyleId") or DIALOGUE_STYLE_ID
     try:
-        _ensure_required_style_subscription({"dialogueStyleId": style_id}, token)
+        if "dialogueStyleId" in data:
+            style_id = data.get("dialogueStyleId") or DIALOGUE_STYLE_ID
+            _ensure_required_style_subscription({"dialogueStyleId": style_id}, token)
         session_id = _current_or_requested_session_id(data, token)
     except Exception as e:
         logging.error(f"准备更新会话前获取会话失败: {e}")
@@ -892,8 +893,9 @@ def _update_session(data, token):
     payload = {
         "i": token,
         "sessionId": session_id,
-        "dialogueStyleId": style_id,
     }
+    if "dialogueStyleId" in data:
+        payload["dialogueStyleId"] = data.get("dialogueStyleId") or DIALOGUE_STYLE_ID
     if "agent_image_model_id" in data:
         payload["agentImageModelId"] = _image_model_id_from_data(data)
     if "img_size" in data or "img_artist_preset_id" in data:
