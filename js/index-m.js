@@ -940,6 +940,26 @@ document.addEventListener("DOMContentLoaded", function (event) {
     var earliestMsgId = null;
     var recentlySentSet = {}; 
     var recentlyReceivedSet = {};
+    // 按 Misskey 消息 ID 防重：内容防重在 assistantText 与时间线 content 文本不完全一致时会失效。
+    var receivedMsgIds = {};
+    function markReceivedId(id) {
+        if (!id) return;
+        receivedMsgIds[id] = true;
+        setTimeout(function() { delete receivedMsgIds[id]; }, 300000);
+    }
+    // 检查内容是否已被防重标记覆盖。分段输出时 sendMessage 标记的是合并文本，
+    // poll 拉到的是分段文本，除了精确匹配还需检查分段文本是否是某个已标记文本的子串。
+    function isRecentlyReceived(content) {
+        if (!content) return false;
+        if (recentlyReceivedSet[content]) return true;
+        var trimmed = String(content).trim();
+        if (trimmed && recentlyReceivedSet[trimmed]) return true;
+        for (var key in recentlyReceivedSet) {
+            if (!key) continue;
+            if (trimmed && key.indexOf(trimmed) !== -1) return true;
+        }
+        return false;
+    }
     var isAtBottomFlag = true;
     var isTimelineLoading = false;
     var timelineLoadPromise = null;
@@ -1803,7 +1823,11 @@ document.addEventListener("DOMContentLoaded", function (event) {
                         delete recentlySentSet[m.content];
                         continue;
                     }
-                    if (mRole === "aliya" && recentlyReceivedSet[m.content]) {
+                    if (mRole === "aliya" && m.id && receivedMsgIds[m.id]) {
+                        lastMsgId = m.id;
+                        continue;
+                    }
+                    if (mRole === "aliya" && isRecentlyReceived(m.content)) {
                         lastMsgId = m.id;
                         delete recentlyReceivedSet[m.content];
                         continue;
@@ -1815,6 +1839,8 @@ document.addEventListener("DOMContentLoaded", function (event) {
                     }
                     // 走到这里说明这是真实的新消息
                     if (mRole === "aliya") {
+                        // 关键：在 await 图片处理之前就标记消息 id，避免 await 期间 sendMessage 重复渲染。
+                        markReceivedId(m.id);
                         var processed = await processDrawingInstruction(m.content, m.id);
                         var hrResult = processHeartRateInstruction(processed.text);
                         if (!hrResult.matched) {
@@ -1829,7 +1855,7 @@ document.addEventListener("DOMContentLoaded", function (event) {
                         // 用 IIFE 捕获本条消息内容，避免 var 循环变量被 setTimeout 闭包引用到最后一条消息。
                         (function (contentKey) {
                             recentlyReceivedSet[contentKey] = true;
-                            setTimeout(function() { delete recentlyReceivedSet[contentKey]; }, 10000);
+                            setTimeout(function() { delete recentlyReceivedSet[contentKey]; }, 300000);
                         })(m.content);
                         appendedAssistant = true;
                     } else if (mRole === "player") {
@@ -1850,13 +1876,19 @@ document.addEventListener("DOMContentLoaded", function (event) {
                         delete recentlySentSet[msg.content];
                         continue;
                     }
-                    if (msgRole === "aliya" && recentlyReceivedSet[msg.content]) {
+                    if (msgRole === "aliya" && msg.id && receivedMsgIds[msg.id]) {
+                        if (msg.id > lastMsgId) lastMsgId = msg.id;
+                        continue;
+                    }
+                    if (msgRole === "aliya" && isRecentlyReceived(msg.content)) {
                         if (msg.id > lastMsgId) lastMsgId = msg.id;
                         delete recentlyReceivedSet[msg.content];
                         continue;
                     }
-                    
+
                     if (msgRole === "aliya") {
+                        // 关键：在 await 图片处理之前就标记消息 id，避免 await 期间 sendMessage 重复渲染。
+                        markReceivedId(msg.id);
                         var processed = await processDrawingInstruction(msg.content, msg.msk_msg_id);
                         var hrResult = processHeartRateInstruction(processed.text);
                         if (!hrResult.matched) {
@@ -1871,7 +1903,7 @@ document.addEventListener("DOMContentLoaded", function (event) {
                         });
                         (function (contentKey) {
                             recentlyReceivedSet[contentKey] = true;
-                            setTimeout(function() { delete recentlyReceivedSet[contentKey]; }, 10000);
+                            setTimeout(function() { delete recentlyReceivedSet[contentKey]; }, 300000);
                         })(msg.content);
                     } else {
                         appendMessage(msgRole, msg.content, msg.createdAt || msg.timestamp || null, timelineAttachmentImageUrls(msg.file));
@@ -1941,6 +1973,11 @@ document.addEventListener("DOMContentLoaded", function (event) {
             if (data.status === "success" && data.assistant_message !== undefined) {
                 var rawText = data.assistant_message;
                 var msgId = data.assistant_message_id;
+                // 关键：在 await 图片处理之前就标记消息 id。
+                // processDrawingInstruction 内部会 await fetchPlaceholderImage（网络请求，耗时），
+                // 若等到 await 完成后才标记 id，则 await 期间 poll 拉到同一条消息时 id 尚未标记，
+                // 两条路径都在"检查通过但尚未标记"的窗口期内，导致带生图的消息被重复渲染。
+                markReceivedId(msgId);
                 // 恢复稳定版逻辑：不再依赖 timelineSnapshotMessageIds 这种复杂的快照比对。
                 // 只要后端返回了，我们就直接渲染。如果 poll 抢先拉到了，poll 里的 recentlyReceivedSet 会跳过它。
                 var processed = await processDrawingInstruction(rawText, msgId);
@@ -1965,11 +2002,23 @@ document.addEventListener("DOMContentLoaded", function (event) {
                     assistantMeta.proactiveScheduleActionTypes,
                     assistantMeta.proactiveScheduleControlFailed
                 );
+                // 渲染检查只看 content（poll 渲染时会标记 content），不看 id。
+                // id 是本条 sendMessage 自己提前标记的（用于挡 poll），若此处检查 id 会把自己的渲染也挡掉。
                 if (!recentlyReceivedSet[rawText]) {
                     renderAliyaMessage(hrResult.text, processed.images, false, assistantMeta);
                 }
-                recentlyReceivedSet[rawText] = true;
-                setTimeout(function () { delete recentlyReceivedSet[rawText]; }, 10000);
+                // 防重标记：分段输出开启时，Misskey 时间线会把一条回复拆成多条独立消息，
+                // 而 /api/chat 同步返回的 rawText 是合并文本。两者 content 对不上会导致 poll 重复渲染。
+                // 因此除了标记合并文本，还要按换行拆分标记每个分段，确保 poll 拉到分段消息时能命中防重。
+                var dedupKeys = [rawText];
+                rawText.split(/\n+/).forEach(function(seg) {
+                    var trimmed = seg.trim();
+                    if (trimmed && trimmed !== rawText) dedupKeys.push(trimmed);
+                });
+                dedupKeys.forEach(function(key) {
+                    recentlyReceivedSet[key] = true;
+                    setTimeout(function () { delete recentlyReceivedSet[key]; }, 300000);
+                });
             } else if (data.status === "error") {
                 var errorReply = data.reply || data.error || "通信故障，请稍后再试";
                 var errorTimestamp = new Date().toISOString();
