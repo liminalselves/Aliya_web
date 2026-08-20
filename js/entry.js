@@ -8,9 +8,9 @@ function getForcedView() {
 
 function isMobileDevice() {
   const ua = navigator.userAgent.toLowerCase();
-  const isMobileUA = /android|iphone|ipod|ipad|windows phone|mobile/.test(ua);
+  const isMobileUA = /android(?!.* tablet)|iphone|ipod|windows phone/.test(ua);
   const isNarrowViewport = window.matchMedia("(max-width: 767px)").matches;
-  const isCoarseNarrow = window.matchMedia("(pointer: coarse) and (max-width: 1023px)").matches;
+  const isCoarseNarrow = window.matchMedia("(pointer: coarse) and (max-width: 767px)").matches;
 
   return isMobileUA || isNarrowViewport || isCoarseNarrow;
 }
