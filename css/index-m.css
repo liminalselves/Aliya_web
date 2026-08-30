@@ -341,7 +341,8 @@ body {
 /* Operation 面板使用 Aliya 自己的暖色系统，避免沿用 Misskey 荧光绿。 */
 .op-overlay .op-choice-card.active,
 .op-overlay .op-segment-btn.active,
-.op-overlay .op-artist-card.active {
+.op-overlay .op-artist-card.active,
+.op-overlay .op-rule-card.active {
     background: #3a2b24;
     border-color: #e6a15a;
     color: #fff1e5;
@@ -676,6 +677,9 @@ body {
     border-radius: 2rem;
 
 }
+.chart li:first-child div {
+    overflow: hidden;
+}
 
 .chart li div .o2 {
     width: 80%;
@@ -683,8 +687,9 @@ body {
     background-color: #78a074;
     border-top-left-radius: 0;
     border-top-right-radius: 0;
+    transition: height 1s linear;
 }
-.chart li div .o2::after{
+.chart li:nth-child(1)::after{
     content: "O2";
     position: absolute;
     bottom: 0;
@@ -701,7 +706,7 @@ body {
     border-top-left-radius: 0;
     border-top-right-radius: 0;
 }
-.chart li div .h2o::after{
+.chart li:nth-child(2)::after{
     content: "H2O";
     position: absolute;
     bottom: 0;
@@ -718,7 +723,7 @@ body {
     border-top-left-radius: 0;
     border-top-right-radius: 0;
 }
-.chart li div .eng::after{
+.chart li:nth-child(3)::after{
     content: "ENG";
     position: absolute;
     bottom: 0;
@@ -2048,8 +2053,8 @@ body {
     flex-shrink: 0;
 }
 .op-rule-status-dot.on {
-    background: #b9f241;
-    box-shadow: 0 0 0 3px rgba(185, 242, 65, 0.15);
+    background: #e6a15a;
+    box-shadow: 0 0 0 3px rgba(230, 161, 90, 0.15);
 }
 .op-rule-prompt-hint {
     color: #888;

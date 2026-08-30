@@ -392,8 +392,133 @@ document.addEventListener("DOMContentLoaded", function (event) {
     document.addEventListener("visibilitychange", syncVitalsTimer);
     syncVitalsTimer();
     window.setRange = function(type) { currentRange = ranges[type]; updateDisplay(); }
-    
-    let isCooling = false; 
+
+    // —— 氧气柱 O2 控制模块 ——
+    var O2_DEPLETION_RATE_MS = 100 / (32 * 3600 * 1000);
+    var O2_REFILL_RATE_MS = 1 / 1000;
+    var O2_AUTO_THRESHOLD = 20;
+    var O2_STORAGE_KEY = "aliya_o2_state";
+    var o2Bar = document.querySelector('.chart .o2');
+    var o2TopBar = document.querySelector('.sb-fill.o2');
+    var eogInput = document.getElementById('eogbutton');
+    var o2Cache = null;
+    var o2Timer = null;
+    var o2LastSaveTime = 0;
+
+    function loadO2State() {
+        if (o2Cache) return o2Cache;
+        try {
+            var raw = localStorage.getItem(O2_STORAGE_KEY);
+            if (!raw) return null;
+            var s = JSON.parse(raw);
+            if (typeof s.o2 !== 'number' || typeof s.timestamp !== 'number') return null;
+            o2Cache = { o2: s.o2, timestamp: s.timestamp, eogOn: !!s.eogOn };
+            return o2Cache;
+        } catch (e) { return null; }
+    }
+
+    function saveO2State(o2, eogOn) {
+        o2Cache = { o2: o2, timestamp: Date.now(), eogOn: eogOn };
+        try {
+            localStorage.setItem(O2_STORAGE_KEY, JSON.stringify(o2Cache));
+            o2LastSaveTime = Date.now();
+        } catch (e) {}
+    }
+
+    function calculateO2(storedO2, storedTimestamp, storedEogOn, now) {
+        var o2 = storedO2;
+        var eogOn = storedEogOn;
+        var remaining = Math.max(0, now - storedTimestamp);
+        var iter = 0;
+        while (remaining > 0 && iter < 50) {
+            iter++;
+            if (eogOn) {
+                if (o2 >= 100) { o2 = 100; eogOn = false; remaining = 0; break; }
+                var msToFull = (100 - o2) / O2_REFILL_RATE_MS;
+                if (msToFull <= remaining) { o2 = 100; remaining -= msToFull; eogOn = false; }
+                else { o2 += remaining * O2_REFILL_RATE_MS; remaining = 0; }
+            } else {
+                if (o2 <= O2_AUTO_THRESHOLD) { eogOn = true; continue; }
+                var msToThreshold = (o2 - O2_AUTO_THRESHOLD) / O2_DEPLETION_RATE_MS;
+                if (msToThreshold <= remaining) { o2 = O2_AUTO_THRESHOLD; remaining -= msToThreshold; eogOn = true; }
+                else { o2 -= remaining * O2_DEPLETION_RATE_MS; remaining = 0; }
+            }
+        }
+        o2 = Math.max(0, Math.min(100, o2));
+        return { o2: o2, eogOn: eogOn };
+    }
+
+    function getO2CurrentState() {
+        var s = loadO2State();
+        if (!s) return null;
+        return calculateO2(s.o2, s.timestamp, s.eogOn, Date.now());
+    }
+
+    function setEogVisual(checked) {
+        if (!eogInput) return;
+        eogInput.checked = checked;
+        var bg = eogInput.closest('.bg');
+        if (!bg) return;
+        var onLabel = bg.querySelector('.on-label');
+        var offLabel = bg.querySelector('.off-label');
+        if (onLabel) onLabel.classList.toggle('active', !checked);
+        if (offLabel) offLabel.classList.toggle('active', checked);
+    }
+
+    function applyO2Visual(o2, instant) {
+        var pct = o2 + '%';
+        if (o2Bar) {
+            if (instant) {
+                o2Bar.style.transition = 'none';
+                o2Bar.style.height = pct;
+                void o2Bar.offsetHeight;
+                o2Bar.style.transition = '';
+            } else {
+                o2Bar.style.height = pct;
+            }
+        }
+        if (o2TopBar) o2TopBar.style.width = pct;
+    }
+
+    function tickO2() {
+        var s = loadO2State();
+        if (!s) { s = { o2: 100, timestamp: Date.now(), eogOn: false }; saveO2State(s.o2, s.eogOn); }
+        var now = Date.now();
+        var result = calculateO2(s.o2, s.timestamp, s.eogOn, now);
+        applyO2Visual(result.o2, false);
+        var currentEog = eogInput ? eogInput.checked : false;
+        if (result.eogOn !== currentEog) {
+            setEogVisual(result.eogOn);
+            saveO2State(result.o2, result.eogOn);
+        } else if (now - o2LastSaveTime > 30000) {
+            saveO2State(result.o2, result.eogOn);
+        }
+    }
+
+    function startO2Loop() {
+        if (o2Timer) clearInterval(o2Timer);
+        var s = loadO2State();
+        if (!s) { saveO2State(100, false); s = o2Cache; }
+        var result = calculateO2(s.o2, s.timestamp, s.eogOn, Date.now());
+        applyO2Visual(result.o2, true);
+        setEogVisual(result.eogOn);
+        if (result.eogOn !== s.eogOn) saveO2State(result.o2, result.eogOn);
+        o2Timer = setInterval(tickO2, 1000);
+    }
+
+    function stopO2Loop() {
+        if (o2Timer) { clearInterval(o2Timer); o2Timer = null; }
+        var st = getO2CurrentState();
+        if (st) saveO2State(st.o2, st.eogOn);
+    }
+
+    document.addEventListener("visibilitychange", function () {
+        if (document.hidden) stopO2Loop();
+        else startO2Loop();
+    });
+    startO2Loop();
+
+    let isCooling = false;
     document.querySelectorAll('.toggle-input').forEach(input => {
         input.addEventListener('change', function () {
             if (isCooling) return;
@@ -418,6 +543,15 @@ document.addEventListener("DOMContentLoaded", function (event) {
     hrmButton.addEventListener('change', function () {
         if (this.checked) { hrm.style.opacity = "1" } else { hrm.style.opacity = "0" }
     });
+
+    if (eogInput) {
+        eogInput.addEventListener('change', function () {
+            var st = getO2CurrentState();
+            var o2 = st ? st.o2 : 100;
+            saveO2State(o2, this.checked);
+            applyO2Visual(o2, false);
+        });
+    }
 
     const liderContainer = document.querySelector('.slider-container');
     liderContainer.addEventListener('mousedown', e => { e.preventDefault() })
