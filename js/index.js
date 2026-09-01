@@ -394,9 +394,9 @@ document.addEventListener("DOMContentLoaded", function (event) {
     window.setRange = function(type) { currentRange = ranges[type]; updateDisplay(); }
 
     // —— 氧气柱 O2 控制模块 ——
-    var O2_DEPLETION_RATE_MS = 100 / (32 * 3600 * 1000);
+    var O2_DEPLETION_RATE_MS = 100 / (50 * 3600 * 1000);//该数据来自“童年是个风筝”
     var O2_REFILL_RATE_MS = 1 / 1000;
-    var O2_AUTO_THRESHOLD = 20;
+    var O2_AUTO_THRESHOLD = 10;//自动填充阈值——数值由miqi填写
     var O2_STORAGE_KEY = "aliya_o2_state";
     var o2Bar = document.querySelector('.chart .o2');
     var o2TopBar = document.querySelector('.sb-fill.o2');
