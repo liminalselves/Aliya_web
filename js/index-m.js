@@ -611,7 +611,7 @@ document.addEventListener("DOMContentLoaded", function (event) {
     // ==================== 图片生成处理模块 ====================
     var currentSessionId = null;
     async function fetchPlaceholderImage(msgId, index) {
-        var url = "https://misskey.liminalselves.top/api/agents/images/generate-placeholder";
+        var url = MSK_ORIGIN + "/api/agents/images/generate-placeholder";
         var payload = {
             sessionId: currentSessionId,
             messageId: msgId,
@@ -689,6 +689,8 @@ document.addEventListener("DOMContentLoaded", function (event) {
 
     // =========================================================
     var API_BASE = (window.ALIYA_API_BASE || "").replace(/\/+$/, "");
+    // msk 实例源，来自 js/config.js；开发时可临时改为 "http://127.0.0.1:3000"。
+    var MSK_ORIGIN = String(window.ALIYA_MSK_ORIGIN || "https://misskey.liminalselves.top").replace(/\/+$/, "");
     var mskToken = "";
 
     function loadToken() {
@@ -696,9 +698,9 @@ document.addEventListener("DOMContentLoaded", function (event) {
     }
     function saveToken() {
         localStorage.setItem("aliya_msk_token", mskToken);
+        opSyncAgentControlToken();
     }
 
-    var MISSKEY_HOST = "misskey.liminalselves.top";
     var MIAUTH_SESSION_KEY = "aliya_miauth_session";
 
     function buildAuthCallbackUrl() {
@@ -804,7 +806,7 @@ document.addEventListener("DOMContentLoaded", function (event) {
             "read:drive",
             "write:drive"
         ].join(",");
-        var authUrl = "https://" + MISSKEY_HOST + "/miauth/" + encodeURIComponent(sessionId)
+        var authUrl = MSK_ORIGIN + "/miauth/" + encodeURIComponent(sessionId)
             + "?name=" + encodeURIComponent("Aliya Web")
             + "&callback=" + encodeURIComponent(callback)
             + "&permission=" + encodeURIComponent(permissions);
@@ -1194,18 +1196,19 @@ document.addEventListener("DOMContentLoaded", function (event) {
 
     // 统一的 aliya 消息渲染入口（处理分段逻辑）
     // immediate=true 时即时渲染各分段（用于历史消息），不应用延迟
+    // msgId 只挂在首个分段/图片元素上，用于控制台导航定位
     // 返回总分段播放时长（ms），0 表示无延迟播放
-    function renderAliyaMessage(cleanContent, images, immediate, messageMeta) {
+    function renderAliyaMessage(cleanContent, images, immediate, messageMeta, msgId) {
         if (segConfig.enabled && cleanContent) {
             var segments = splitAssistantMessageIntoSegments(cleanContent);
             if (segments.length <= 1) {
-                appendMessage("aliya", cleanContent, messageMeta && messageMeta.timestamp, images, null, messageMeta);
+                appendMessage("aliya", cleanContent, messageMeta && messageMeta.timestamp, images, msgId, messageMeta);
                 return 0;
             }
             var elapsed = 0;
             segments.forEach(function(seg, idx) {
                 if (immediate || idx === 0) {
-                    appendMessage("aliya", seg);
+                    appendMessage("aliya", seg, null, null, idx === 0 ? msgId : null);
                     return;
                 }
                 elapsed += agentSegmentDelayMs(seg);
@@ -1213,7 +1216,7 @@ document.addEventListener("DOMContentLoaded", function (event) {
                     appendMessage("aliya", seg);
                 }, elapsed);
             });
-            // 图片在最后一段之后渲染
+            // 图片在最后一段之后渲染（无文字分段时首图承载 msgId）
             if (images && images.length > 0) {
                 if (immediate) {
                     images.forEach(function(imgUrl) {
@@ -1369,17 +1372,20 @@ document.addEventListener("DOMContentLoaded", function (event) {
     }
 
     // 【修复】图片渲染为独立卡片
+    // msgId 为 msk 消息 ID，写入 data-message-id 供控制台导航定位。
     function appendMessage(role, content, msgTimestamp, images, msgId, messageMeta) {
         if (content !== null && content !== undefined && String(content) !== "") {
             var li = document.createElement("li");
             li.className = role + (suppressEnterAnimation ? "" : " msg-enter");
+            if (msgId) li.setAttribute("data-message-id", msgId);
             appendMessageContent(li, String(content));
             aliyaText.appendChild(li);
         }
         if (images && images.length > 0) {
-            images.forEach(function(imgUrl) {
+            images.forEach(function(imgUrl, imgIndex) {
                 var li = document.createElement("li");
                 li.className = role + " image-only" + (suppressEnterAnimation ? "" : " msg-enter");
+                if (msgId && imgIndex === 0) li.setAttribute("data-message-id", msgId);
                 var card = document.createElement("div");
                 card.className = "image-card";
                 var img = document.createElement("img");
@@ -1489,7 +1495,7 @@ document.addEventListener("DOMContentLoaded", function (event) {
             };
             if (rendered.role === "aliya") {
                 // 已有消息切换分段设置时要立即全部重排，不播放逐段延迟。
-                renderAliyaMessage(rendered.content, rendered.images, true, messageMeta);
+                renderAliyaMessage(rendered.content, rendered.images, true, messageMeta, rendered.id);
             } else {
                 appendMessage(rendered.role, rendered.content, rendered.timestamp, rendered.images, rendered.id, messageMeta);
             }
@@ -1825,7 +1831,7 @@ document.addEventListener("DOMContentLoaded", function (event) {
                             timestamp: m.createdAt || m.timestamp || null,
                             proactiveScheduleActionTypes: m.proactiveScheduleActionTypes || m.proactive_schedule_action_types || [],
                             proactiveScheduleControlFailed: m.proactiveScheduleControlFailed === true || m.proactive_schedule_control_failed === true
-                        });
+                        }, m.id);
                         // 用 IIFE 捕获本条消息内容，避免 var 循环变量被 setTimeout 闭包引用到最后一条消息。
                         (function (contentKey) {
                             recentlyReceivedSet[contentKey] = true;
@@ -1868,7 +1874,7 @@ document.addEventListener("DOMContentLoaded", function (event) {
                             timestamp: msg.createdAt || msg.timestamp || null,
                             proactiveScheduleActionTypes: msg.proactiveScheduleActionTypes || msg.proactive_schedule_action_types || [],
                             proactiveScheduleControlFailed: msg.proactiveScheduleControlFailed === true || msg.proactive_schedule_control_failed === true
-                        });
+                        }, msg.msk_msg_id);
                         (function (contentKey) {
                             recentlyReceivedSet[contentKey] = true;
                             setTimeout(function() { delete recentlyReceivedSet[contentKey]; }, 10000);
@@ -1966,7 +1972,7 @@ document.addEventListener("DOMContentLoaded", function (event) {
                     assistantMeta.proactiveScheduleControlFailed
                 );
                 if (!recentlyReceivedSet[rawText]) {
-                    renderAliyaMessage(hrResult.text, processed.images, false, assistantMeta);
+                    renderAliyaMessage(hrResult.text, processed.images, false, assistantMeta, msgId);
                 }
                 recentlyReceivedSet[rawText] = true;
                 setTimeout(function () { delete recentlyReceivedSet[rawText]; }, 10000);
@@ -2099,31 +2105,11 @@ document.addEventListener("DOMContentLoaded", function (event) {
     var opCreateBtn = document.getElementById("opCreateBtn");
     var opStatus = document.getElementById("opStatus");
     var opTimeAwarenessToggle = document.getElementById("opTimeAwarenessToggle");
-    var opRandomProactiveToggle = document.getElementById("opRandomProactiveToggle");
-    var opScheduledProactiveToggle = document.getElementById("opScheduledProactiveToggle");
-    var opProactiveNotice = document.getElementById("opProactiveNotice");
-    var opProactiveLastError = document.getElementById("opProactiveLastError");
-    var opProactiveRefreshBtn = document.getElementById("opProactiveRefreshBtn");
-    var opProactiveScheduleList = document.getElementById("opProactiveScheduleList");
-    var opMemorySettingsLink = document.getElementById("opMemorySettingsLink");
     var opSessionRenameBtn = document.getElementById("opSessionRenameBtn");
     var opSessionDeleteBtn = document.getElementById("opSessionDeleteBtn");
     var opSessions = [];
     var opCurrentSessionId = null;
-    var opAgentModels = [];
-    var opAgentDefaultModelId = "";
-    var opAgentCreditBalance = null;
-    var opImageModels = [];
-    var opArtistPresets = [];
-    var opVisionModels = [];
-    var opVisionDefaultModelId = "";
-    var opModelSuccessRates = {};
     var opCurrentPage = "session";
-    var opRandomProactiveEnabled = false;
-    var opScheduledProactiveEnabled = false;
-    var opProactiveSchedules = [];
-    var opProactiveSchedulesLoading = false;
-    var opProactiveScheduleMutating = null;
     var opPanelLoadPromise = null;
     var opConfigSaveTimer = null;
     var opConfigSaveInFlight = false;
@@ -2137,35 +2123,9 @@ document.addEventListener("DOMContentLoaded", function (event) {
     var opConfirmedConfig = {};
     var opDesiredConfig = {};
     var opConfirmedSessionId = null;
-    var opProactiveReloadAfterSave = false;
     var opSessionSwitchQueued = null;
     var opSessionSwitchPromise = null;
     var opSessionActionBusy = false;
-    var opFallbackImageModels = [{
-        id: "aob0wkxmi3",
-        name: "nai-diffusion-4-5-full",
-        provider: "aurora",
-        apiModelName: "nai-diffusion-4-5-full",
-        costPerCall: 0,
-        defaultParams: {},
-        defaultArtistPresetId: "default-anime"
-    }];
-    var opFallbackArtistPresets = [
-        { id: "default-anime", name: "二次元插画", thumbnailUrl: null },
-        { id: "warm-game-portrait", name: "暖色系游戏立绘", thumbnailUrl: null },
-        { id: "soft-fantasy", name: "轻柔幻想风", thumbnailUrl: null },
-        { id: "clear-sweet", name: "清透甜绘风", thumbnailUrl: null },
-        { id: "light-thick-paint", name: "轻厚涂二次元", thumbnailUrl: null },
-        { id: "line-manga", name: "日系线稿漫画", thumbnailUrl: null }
-    ];
-    var opStyles = [];
-    var opCurrentStyleId = "";
-    var opStyleLoaded = false;
-    var opRules = [];
-    var opRulesLoading = false;
-    var opRuleSaving = false;
-    var opRuleOverrides = {};
-    var opRulesLoadedSessionId = null;
 
     function opShowStatus(msg, type) {
         opStatus.textContent = msg;
@@ -2182,373 +2142,8 @@ document.addEventListener("DOMContentLoaded", function (event) {
         }
     }
 
-    function opSyncProactiveNotice() {
-        if (!opProactiveNotice) return;
-        var enabled = opTimeAwarenessToggle && opTimeAwarenessToggle.checked === true;
-        opProactiveNotice.hidden = enabled;
-        opProactiveNotice.textContent = enabled ? "" : "请先在“会话”页面开启时间感知，才能启用主动消息。";
-        if (opRandomProactiveToggle) opRandomProactiveToggle.disabled = !enabled;
-        if (opScheduledProactiveToggle) opScheduledProactiveToggle.disabled = !enabled;
-    }
-
-    function opFormatProactiveDate(value) {
-        if (!value) return "";
-        var date = new Date(value);
-        if (Number.isNaN(date.getTime())) return String(value);
-        return new Intl.DateTimeFormat("zh-CN", {
-            timeZone: "Asia/Shanghai",
-            year: "numeric", month: "2-digit", day: "2-digit",
-            hour: "2-digit", minute: "2-digit", hour12: false
-        }).format(date).replace(/\//g, "-");
-    }
-
-    function opProactiveStatusLabel(status) {
-        return status === "active" ? "执行中" : status === "paused" ? "已暂停" : status === "completed" ? "已完成" : "已取消";
-    }
-
-    function opProactiveTriggerLabel(schedule) {
-        var trigger = schedule && schedule.trigger || {};
-        if (trigger.type === "once") return "一次性 · " + (trigger.at ? opFormatProactiveDate(trigger.at) : "未设置时间");
-        var repeat = trigger.repeat && trigger.repeat.mode === "count"
-            ? "重复 " + trigger.repeat.count + " 次"
-            : "无限重复";
-        return repeat + " · " + (trigger.cron || "未设置规则");
-    }
-
-    function opProactiveRemainingLabel(value) {
-        return value == null ? "无限重复" : "剩余 " + value + " 次";
-    }
-
-    function opRenderProactiveSchedules() {
-        if (!opProactiveScheduleList) return;
-        opProactiveScheduleList.innerHTML = "";
-        if (opProactiveSchedulesLoading) {
-            opProactiveScheduleList.innerHTML = '<div class="op-proactive-empty"><span class="op-loading-spinner"></span>正在加载定时计划...</div>';
-            return;
-        }
-        if (!opCurrentSessionId) {
-            opProactiveScheduleList.innerHTML = '<div class="op-proactive-empty">当前没有可用会话。</div>';
-            return;
-        }
-        if (!opProactiveSchedules.length) {
-            opProactiveScheduleList.innerHTML = '<div class="op-proactive-empty">当前没有定时计划。</div>';
-            return;
-        }
-        opProactiveSchedules.forEach(function(schedule) {
-            var card = document.createElement("div");
-            card.className = "op-proactive-card";
-
-            var top = document.createElement("div");
-            top.className = "op-proactive-card-top";
-            var description = document.createElement("div");
-            description.className = "op-proactive-card-description";
-            description.textContent = schedule.description || "未命名定时计划";
-            var status = document.createElement("span");
-            status.className = "op-proactive-status status-" + (schedule.status || "unknown");
-            status.textContent = opProactiveStatusLabel(schedule.status);
-            top.appendChild(description);
-            top.appendChild(status);
-            card.appendChild(top);
-
-            var meta = document.createElement("div");
-            meta.className = "op-proactive-card-meta";
-            var trigger = document.createElement("span");
-            trigger.textContent = opProactiveTriggerLabel(schedule);
-            meta.appendChild(trigger);
-            if (schedule.nextRunAt) {
-                var next = document.createElement("span");
-                next.textContent = "下次执行 " + opFormatProactiveDate(schedule.nextRunAt);
-                meta.appendChild(next);
-            }
-            if (schedule.lastRunAt) {
-                var last = document.createElement("span");
-                last.textContent = "上次执行 " + opFormatProactiveDate(schedule.lastRunAt);
-                meta.appendChild(last);
-            }
-            if (schedule.createdAt) {
-                var created = document.createElement("span");
-                created.textContent = "创建于 " + opFormatProactiveDate(schedule.createdAt);
-                meta.appendChild(created);
-            }
-            var remaining = document.createElement("span");
-            remaining.textContent = opProactiveRemainingLabel(schedule.remainingRuns);
-            meta.appendChild(remaining);
-            card.appendChild(meta);
-
-            var actions = document.createElement("div");
-            actions.className = "op-proactive-card-actions";
-            if (schedule.status === "active" || schedule.status === "paused") {
-                var toggle = document.createElement("button");
-                toggle.type = "button";
-                toggle.className = "op-proactive-action-btn";
-                toggle.textContent = schedule.status === "active" ? "暂停" : "恢复";
-                toggle.disabled = opProactiveScheduleMutating === schedule.id || (schedule.status === "paused" && (!opTimeAwarenessToggle || !opTimeAwarenessToggle.checked || !opScheduledProactiveEnabled));
-                toggle.addEventListener("click", function() { opToggleProactiveSchedule(schedule); });
-                actions.appendChild(toggle);
-            }
-            var remove = document.createElement("button");
-            remove.type = "button";
-            remove.className = "op-proactive-action-btn danger";
-            remove.textContent = "删除";
-            remove.disabled = opProactiveScheduleMutating === schedule.id;
-            remove.addEventListener("click", function() { opDeleteProactiveSchedule(schedule); });
-            actions.appendChild(remove);
-            card.appendChild(actions);
-            opProactiveScheduleList.appendChild(card);
-        });
-    }
-
-    async function opLoadProactiveSchedules() {
-        if (opProactiveSchedulesLoading) return;
-        var previousSchedules = opProactiveSchedules.slice();
-        opProactiveSchedulesLoading = true;
-        opRenderProactiveSchedules();
-        try {
-            var data = await opPostConversation({ action: "proactive_schedules", session_id: opCurrentSessionId });
-            opProactiveSchedules = Array.isArray(data) ? data : [];
-        } catch (err) {
-            opProactiveSchedules = previousSchedules;
-            if (opCurrentPage === "proactive") opShowStatus("加载定时计划失败：" + err.message, "error");
-        } finally {
-            opProactiveSchedulesLoading = false;
-            opRenderProactiveSchedules();
-        }
-    }
-
-    function opSaveProactiveSetting(kind, enabled) {
-        if (!opTimeAwarenessToggle || !opTimeAwarenessToggle.checked) {
-            if (kind === "random" && opRandomProactiveToggle) opRandomProactiveToggle.checked = opRandomProactiveEnabled;
-            if (kind === "scheduled" && opScheduledProactiveToggle) opScheduledProactiveToggle.checked = opScheduledProactiveEnabled;
-            opShowStatus("请先开启时间感知", "error");
-            return;
-        }
-        var key = kind === "random" ? "random_proactive_enabled" : "scheduled_proactive_enabled";
-        if (kind === "random") opRandomProactiveEnabled = enabled;
-        else opScheduledProactiveEnabled = enabled;
-        if (opTimeAwarenessToggle) opTimeAwarenessToggle.disabled = opRandomProactiveEnabled || opScheduledProactiveEnabled;
-        if (kind === "scheduled" && enabled) opProactiveReloadAfterSave = true;
-        opRenderProactiveSchedules();
-        var patch = {};
-        patch[key] = enabled;
-        opQueueConfigPatch(patch);
-    }
-
-    async function opToggleProactiveSchedule(schedule) {
-        if (opProactiveScheduleMutating) return;
-        var status = schedule.status === "active" ? "paused" : "active";
-        opProactiveScheduleMutating = schedule.id;
-        opRenderProactiveSchedules();
-        try {
-            await opWaitForPendingConfigSaves();
-            var result = await opPostConversation({ action: "set_proactive_status", session_id: opCurrentSessionId, schedule_id: schedule.id, status: status });
-            if (result && result.status === "completed") opShowStatus("一次性计划已完成，无法恢复", "error");
-            await opLoadProactiveSchedules();
-        } catch (err) {
-            opShowStatus("修改定时计划失败：" + err.message, "error");
-        } finally {
-            opProactiveScheduleMutating = null;
-            opRenderProactiveSchedules();
-        }
-    }
-
-    async function opDeleteProactiveSchedule(schedule) {
-        if (opProactiveScheduleMutating || !window.confirm("确定删除这个定时计划？")) return;
-        opProactiveScheduleMutating = schedule.id;
-        opRenderProactiveSchedules();
-        try {
-            await opWaitForPendingConfigSaves();
-            await opPostConversation({ action: "delete_proactive_schedule", session_id: opCurrentSessionId, schedule_id: schedule.id });
-            await opLoadProactiveSchedules();
-            opShowStatus("定时计划已删除", "success");
-        } catch (err) {
-            opShowStatus("删除定时计划失败：" + err.message, "error");
-        } finally {
-            opProactiveScheduleMutating = null;
-            opRenderProactiveSchedules();
-        }
-    }
-
     function opSyncSegmentToggle() {
         if (opSegToggle) opSegToggle.checked = segConfig.enabled === true;
-    }
-
-    function opRenderRules() {
-        var list = document.getElementById("opRuleList");
-        var summary = document.getElementById("opRuleSummary");
-        if (!list) return;
-        list.innerHTML = "";
-        if (opRulesLoading) {
-            list.innerHTML = '<div class="op-image-loading"><span class="op-loading-spinner"></span><span>正在加载规则...</span></div>';
-            if (summary) summary.hidden = true;
-            return;
-        }
-        if (!(opCurrentSessionId || currentSessionId)) {
-            list.innerHTML = '<div class="op-rule-empty">当前没有可用会话。</div>';
-            if (summary) summary.hidden = true;
-            return;
-        }
-        if (opRules.length === 0) {
-            list.innerHTML = '<div class="op-rule-empty">当前会话使用的角色没有配置规则。</div>';
-            if (summary) summary.hidden = true;
-            return;
-        }
-        if (summary) {
-            var persistentCount = 0;
-            var toggleableCount = 0;
-            opRules.forEach(function(rule) {
-                if (rule.type === "persistent") persistentCount++;
-                else toggleableCount++;
-            });
-            summary.hidden = false;
-            summary.textContent = opRules.length + " 条规则 · " + persistentCount + " 常驻 · " + toggleableCount + " 可切换";
-        }
-        opRules.forEach(function(rule) {
-            var card = document.createElement("div");
-            card.className = "op-rule-card" + (rule.type === "toggleable" && rule.currentEnabled ? " active" : "");
-
-            var copy = document.createElement("div");
-            copy.className = "op-rule-copy";
-
-            var head = document.createElement("div");
-            head.className = "op-rule-head";
-
-            var title = document.createElement("span");
-            title.className = "op-rule-title";
-            title.textContent = rule.name || "未命名规则";
-
-            var badge = document.createElement("span");
-            badge.className = "op-rule-badge" + (rule.type === "toggleable" && rule.hasDisabledPrompt ? " bidirectional" : "");
-            badge.textContent = rule.type === "persistent" ? "常驻" : (rule.hasDisabledPrompt ? "双向" : "可切换");
-
-            head.appendChild(title);
-            head.appendChild(badge);
-            copy.appendChild(head);
-
-            if (rule.description) {
-                var desc = document.createElement("div");
-                desc.className = "op-rule-desc";
-                desc.textContent = rule.description;
-                copy.appendChild(desc);
-            }
-            if (rule.type === "toggleable") {
-                var status = document.createElement("div");
-                status.className = "op-rule-status";
-
-                var dot = document.createElement("span");
-                dot.className = "op-rule-status-dot" + (rule.currentEnabled ? " on" : " off");
-                status.appendChild(dot);
-
-                var statusText = document.createElement("span");
-                statusText.textContent = rule.currentEnabled ? "已开启" : "已关闭";
-                status.appendChild(statusText);
-
-                if (rule.hasDisabledPrompt) {
-                    var promptHint = document.createElement("span");
-                    promptHint.className = "op-rule-prompt-hint";
-                    promptHint.textContent = rule.currentEnabled ? "（注入开启提示词）" : "（注入关闭提示词）";
-                    status.appendChild(promptHint);
-                }
-                copy.appendChild(status);
-            }
-
-            card.appendChild(copy);
-
-            if (rule.type === "toggleable") {
-                var toggle = document.createElement("label");
-                toggle.className = "op-rule-switch";
-                var input = document.createElement("input");
-                input.type = "checkbox";
-                input.checked = rule.currentEnabled === true;
-                input.disabled = opRuleSaving;
-                input.addEventListener("change", function() { opToggleRule(rule, input.checked === true); });
-                toggle.appendChild(input);
-                card.appendChild(toggle);
-            }
-
-            list.appendChild(card);
-        });
-    }
-
-    async function opLoadRules() {
-        var sessionId = opCurrentSessionId || currentSessionId;
-        if (!sessionId) {
-            opRules = [];
-            opRulesLoadedSessionId = null;
-            opRenderRules();
-            return;
-        }
-        opRulesLoading = true;
-        opRenderRules();
-        try {
-            var data = await opPostConversation({ action: "rule_list", session_id: sessionId });
-            opRules = Array.isArray(data) ? data : [];
-            opRulesLoadedSessionId = sessionId;
-        } catch (err) {
-            opRules = [];
-            if (opCurrentPage === "rules") opShowStatus("加载规则失败：" + err.message, "error");
-        } finally {
-            opRulesLoading = false;
-            opRenderRules();
-        }
-    }
-
-    function opEnsureRulesLoaded() {
-        var sessionId = opCurrentSessionId || currentSessionId;
-        if (!sessionId) return;
-        if (opRulesLoadedSessionId === sessionId && !opRulesLoading) return;
-        opLoadRules();
-    }
-
-    async function opToggleRule(rule, enabled) {
-        if (opRuleSaving) return;
-        opRuleSaving = true;
-        opRenderRules();
-        try {
-            var nextOverrides = Object.assign({}, opRuleOverrides);
-            nextOverrides[rule.id] = enabled === true;
-            var result = await opPostConversation({
-                action: "update",
-                session_id: opCurrentSessionId || currentSessionId,
-                rule_overrides: nextOverrides
-            });
-            if (!result) throw new Error("请求未完成");
-            opRuleOverrides = nextOverrides;
-            rule.currentEnabled = enabled === true;
-            opShowStatus("规则已更新", "success");
-        } catch (err) {
-            opShowStatus("更新规则失败：" + err.message, "error");
-        } finally {
-            opRuleSaving = false;
-            opRenderRules();
-        }
-    }
-
-    function opSetPage(page) {
-        opCurrentPage = page || "session";
-        document.querySelectorAll(".op-page[data-op-page]").forEach(function(el) {
-            el.classList.toggle("active", el.getAttribute("data-op-page") === opCurrentPage);
-        });
-        if (opSubnav) {
-            opSubnav.querySelectorAll("[data-op-target]").forEach(function(btn) {
-                btn.classList.toggle("active", btn.getAttribute("data-op-target") === opCurrentPage);
-            });
-        }
-        if (opCurrentPage === "memory") opSyncMemorySettingsLink();
-        if (opCurrentPage === "proactive") {
-            opSyncProactiveNotice();
-            opRenderProactiveSchedules();
-            if (opCurrentSessionId) opLoadProactiveSchedules();
-        }
-        if (opCurrentPage === "style" && !opStyleLoaded) opLoadStyleOptions();
-        if (opCurrentPage === "rules") opEnsureRulesLoaded();
-    }
-
-    function opSyncMemorySettingsLink() {
-        if (!opMemorySettingsLink) return;
-        var sessionId = opCurrentSessionId || currentSessionId;
-        opMemorySettingsLink.href = sessionId
-            ? "https://misskey.liminalselves.top/chat/agent/" + encodeURIComponent(sessionId)
-            : "https://misskey.liminalselves.top/agents";
     }
 
     async function opPostConversation(payload) {
@@ -2563,416 +2158,23 @@ document.addEventListener("DOMContentLoaded", function (event) {
         return data;
     }
 
-    function opProviderLabel(provider) {
-        return provider === "aurora" ? "Aurora" : (provider || "未知");
-    }
-
-    function opFormatModelCost(cost) {
-        var n = Number(cost);
-        if (!Number.isFinite(n)) return "未知";
-        if (n === 0) return "免费";
-        return n.toLocaleString();
-    }
-
-    function opFormatTokenCountCompact(value) {
-        var n = Number(value);
-        if (!Number.isFinite(n)) return "—";
-        var t = Math.max(0, Math.trunc(n));
-        if (t >= 1000000) {
-            var m = t / 1000000;
-            return (m >= 10 ? Math.round(m) : Math.round(m * 10) / 10).toString().replace(/\.0$/, "") + "M";
-        }
-        if (t >= 1000) {
-            var k = t / 1000;
-            return (k >= 100 ? Math.round(k) : Math.round(k * 10) / 10).toString().replace(/\.0$/, "") + "k";
-        }
-        return String(t);
-    }
-
-    function opResolvedAgentDefaultModelId() {
-        if (opAgentModels.length === 0) return "";
-        if (opAgentDefaultModelId && opAgentModels.some(function(model) { return model.id === opAgentDefaultModelId; })) {
-            return opAgentDefaultModelId;
-        }
-        return opAgentModels[0].id || "";
-    }
-
-    function opDisplayAgentModelId(agentModelId) {
-        if (agentModelId && opAgentModels.some(function(model) { return model.id === agentModelId; })) {
-            return agentModelId;
-        }
-        return opResolvedAgentDefaultModelId();
-    }
-
-    function opFindAgentModel(modelId) {
-        for (var i = 0; i < opAgentModels.length; i++) {
-            if (opAgentModels[i].id === modelId) return opAgentModels[i];
-        }
-        return null;
-    }
-
-    function opAgentModelCost(modelId) {
-        var model = opFindAgentModel(modelId);
-        if (!model) return 0;
-        var cost = Number(model.costPerCall);
-        return Number.isFinite(cost) ? Math.max(0, cost) : 0;
-    }
-
-    function opUpdateAgentModelHero() {
-        var currentEl = document.getElementById("opAgentModelCurrent");
-        var creditWrap = document.getElementById("opAgentCreditWrap");
-        var creditEl = document.getElementById("opAgentCreditBalance");
-        var costWrap = document.getElementById("opAgentCostWrap");
-        var costEl = document.getElementById("opAgentExpectedCost");
-        var selectedId = opGetChoiceValue("cfgAgentModel", opResolvedAgentDefaultModelId());
-        var model = opFindAgentModel(selectedId);
-        var cost = opAgentModelCost(selectedId);
-
-        if (currentEl) currentEl.textContent = model ? (model.name || model.id) : "-";
-        if (creditWrap && creditEl) {
-            var hasCredit = Number.isFinite(opAgentCreditBalance);
-            creditWrap.hidden = !hasCredit;
-            if (hasCredit) creditEl.textContent = opAgentCreditBalance.toLocaleString();
-        }
-        if (costWrap && costEl) {
-            costWrap.hidden = !(cost > 0);
-            if (cost > 0) costEl.textContent = cost.toLocaleString();
-        }
-    }
-
-    function opSuccessRateInfo(modelId) {
-        var rate = opModelSuccessRates[modelId];
-        if (!rate || !rate.total) {
-            return { text: "暂无数据", className: "muted" };
-        }
-        var percent = Math.round((rate.success / rate.total) * 100);
-        var className = percent >= 90 ? "high" : (percent >= 70 ? "medium" : "low");
-        return {
-            text: percent + "% (" + rate.success + "/" + rate.total + ")",
-            className: className
-        };
-    }
-
-    function opCreateMetaChip(kicker, value, className) {
-        var chip = document.createElement("span");
-        chip.className = "op-model-meta-chip";
-
-        var kickerSpan = document.createElement("span");
-        kickerSpan.className = "op-model-meta-kicker";
-        kickerSpan.textContent = kicker;
-
-        var valueSpan = document.createElement("span");
-        valueSpan.className = "op-model-meta-value" + (className ? " " + className : "");
-        valueSpan.textContent = value;
-
-        chip.appendChild(kickerSpan);
-        chip.appendChild(valueSpan);
-        return chip;
-    }
-
-    function opRenderAgentModelLoading() {
-        var group = document.getElementById("cfgAgentModel");
-        if (group && opAgentModels.length > 0) return;
-        if (group) group.innerHTML = '<div class="op-image-loading"><span class="op-loading-spinner"></span><span>正在加载对话模型...</span></div>';
-        var currentEl = document.getElementById("opAgentModelCurrent");
-        if (currentEl) currentEl.textContent = "...";
-    }
-
-    function opRenderAgentModels(selectedId) {
-        var group = document.getElementById("cfgAgentModel");
-        if (!group) return;
-        group.classList.remove("is-loading");
-        group.innerHTML = "";
-
-        if (opAgentModels.length === 0) {
-            group.innerHTML = '<div class="op-image-loading"><span>暂无可选对话模型</span></div>';
-            opUpdateAgentModelHero();
-            return;
-        }
-
-        var resolvedSelectedId = opDisplayAgentModelId(selectedId);
-        opAgentModels.forEach(function(model) {
-            var value = model.id || "";
-            var card = document.createElement("button");
-            card.type = "button";
-            card.className = "op-choice-card op-model-card";
-            card.setAttribute("data-value", value);
-            if (model.description) card.title = model.description;
-
-            var head = document.createElement("div");
-            head.className = "op-model-card-head";
-
-            var title = document.createElement("span");
-            title.className = "op-choice-title op-model-title";
-            title.textContent = model.name || model.id || "未命名模型";
-
-            var action = document.createElement("span");
-            action.className = "op-choice-action";
-            action.textContent = value === resolvedSelectedId ? "已启用" : "选择";
-
-            head.appendChild(title);
-            head.appendChild(action);
-            card.appendChild(head);
-
-            if (model.description) {
-                var description = document.createElement("p");
-                description.className = "op-model-description";
-                description.textContent = model.description;
-                card.appendChild(description);
-            }
-
-            var chips = document.createElement("div");
-            chips.className = "op-model-meta";
-            var rate = opSuccessRateInfo(value);
-            chips.appendChild(opCreateMetaChip("上下文", opFormatTokenCountCompact(model.maxContextTokens), ""));
-            chips.appendChild(opCreateMetaChip("输出", opFormatTokenCountCompact(model.maxOutputTokensPerCall), ""));
-            chips.appendChild(opCreateMetaChip("费用", opFormatModelCost(model.costPerCall), Number(model.costPerCall) === 0 ? "highlight" : ""));
-            chips.appendChild(opCreateMetaChip("1h 成功率", rate.text, rate.className));
-            card.appendChild(chips);
-            group.appendChild(card);
+    function opSetPage(page) {
+        opCurrentPage = page || "session";
+        var isEmbedPage = AGENT_CONTROL_PANELS.indexOf(opCurrentPage) !== -1;
+        document.querySelectorAll(".op-page[data-op-page]").forEach(function(el) {
+            var pageName = el.getAttribute("data-op-page");
+            el.classList.toggle("active", pageName === (isEmbedPage ? "agent-control" : opCurrentPage));
         });
-
-        opSetChoiceValue("cfgAgentModel", resolvedSelectedId, opResolvedAgentDefaultModelId());
-        opUpdateAgentModelHero();
-    }
-
-    function opRenderImageLoading() {
-        var modelGroup = document.getElementById("cfgAgentImageModel");
-        var presetGroup = document.getElementById("cfgImgArtistPresetId");
-        if (modelGroup && opImageModels.length === 0) modelGroup.innerHTML = '<div class="op-image-loading"><span class="op-loading-spinner"></span><span>正在加载模型...</span></div>';
-        if (presetGroup && opArtistPresets.length === 0 && !presetGroup.querySelector(".op-artist-card")) {
-            presetGroup.innerHTML = '<div class="op-image-loading"><span class="op-loading-spinner"></span><span>正在加载画师串...</span></div>';
+        if (opSubnav) {
+            opSubnav.querySelectorAll("[data-op-target]").forEach(function(btn) {
+                btn.classList.toggle("active", btn.getAttribute("data-op-target") === opCurrentPage);
+            });
         }
-    }
-
-    function opRenderImageModels(selectedId) {
-        var group = document.getElementById("cfgAgentImageModel");
-        if (!group) return;
-        group.classList.remove("is-loading");
-        group.innerHTML = "";
-
-        function appendModelCard(model) {
-            var value = model.id || "";
-            var card = document.createElement("button");
-            card.type = "button";
-            card.className = "op-choice-card op-model-card";
-            card.setAttribute("data-value", value);
-            var modelHints = [];
-            if (model.apiModelName) modelHints.push("API 模型：" + model.apiModelName);
-            if (model.description) modelHints.push(model.description);
-            if (modelHints.length) card.title = modelHints.join("\n");
-
-            var head = document.createElement("div");
-            head.className = "op-model-card-head";
-
-            var title = document.createElement("span");
-            title.className = "op-choice-title op-model-title";
-            title.textContent = model.name || model.id || "无";
-
-            var action = document.createElement("span");
-            action.className = "op-choice-action";
-            action.textContent = value === selectedId ? "已启用" : "选择";
-
-            head.appendChild(title);
-            head.appendChild(action);
-            card.appendChild(head);
-
-            var chips = document.createElement("div");
-            chips.className = "op-model-meta";
-            if (value === "") {
-                chips.appendChild(opCreateMetaChip("状态", "关闭生图", "highlight"));
-                chips.appendChild(opCreateMetaChip("费用", "免费", "highlight"));
-            } else {
-                var rate = opSuccessRateInfo(value);
-                chips.appendChild(opCreateMetaChip("提供商", opProviderLabel(model.provider), ""));
-                if (model.supportsReferenceImage === true) chips.appendChild(opCreateMetaChip("参考图", "支持", "highlight"));
-                chips.appendChild(opCreateMetaChip("费用", opFormatModelCost(model.costPerCall), Number(model.costPerCall) === 0 ? "highlight" : ""));
-                chips.appendChild(opCreateMetaChip("1h 成功率", rate.text, rate.className));
-            }
-            card.appendChild(chips);
-            group.appendChild(card);
-        }
-
-        appendModelCard({ id: "", name: "无" });
-        var models = opImageModels.length > 0 ? opImageModels : opFallbackImageModels;
-        models.forEach(appendModelCard);
-        opSetChoiceValue("cfgAgentImageModel", selectedId || "", "");
-    }
-
-    function opRenderVisionModelLoading() {
-        var group = document.getElementById("opVisionModelGroup");
-        var select = document.getElementById("cfgAgentVisionModel");
-        var cost = document.getElementById("opVisionModelCost");
-        if (group) group.hidden = false;
-        if (select) {
-            select.disabled = true;
-            select.innerHTML = "";
-            var option = document.createElement("option");
-            option.textContent = "正在加载识图模型...";
-            select.appendChild(option);
-        }
-        if (cost) cost.textContent = "用于理解你发送的图片 · 识图费用：-";
-    }
-
-    function opRenderVisionModels(selectedId) {
-        var group = document.getElementById("opVisionModelGroup");
-        var select = document.getElementById("cfgAgentVisionModel");
-        var cost = document.getElementById("opVisionModelCost");
-        if (!group || !select) return;
-        if (!opVisionModels.length) {
-            group.hidden = true;
-            select.disabled = true;
-            return;
-        }
-
-        var fallbackId = opVisionDefaultModelId || opVisionModels[0].id || "";
-        var resolvedId = selectedId || fallbackId;
-        if (!opVisionModels.some(function(model) { return model.id === resolvedId; })) resolvedId = fallbackId;
-
-        select.innerHTML = "";
-        opVisionModels.forEach(function(model) {
-            var option = document.createElement("option");
-            option.value = model.id || "";
-            option.textContent = model.name || model.id || "未命名模型";
-            select.appendChild(option);
-        });
-        select.value = resolvedId;
-        select.disabled = false;
-        group.hidden = false;
-
-        var activeModel = opVisionModels.find(function(model) { return model.id === resolvedId; });
-        if (cost) cost.textContent = "用于理解你发送的图片 · 识图费用：" + opFormatModelCost(activeModel && activeModel.costPerCall);
-    }
-
-    function opRenderArtistPresets(selectedId) {
-        var group = document.getElementById("cfgImgArtistPresetId");
-        if (!group) return;
-        group.classList.remove("is-loading");
-        group.innerHTML = "";
-        var presets = opArtistPresets.length > 0 ? opArtistPresets : opFallbackArtistPresets;
-        if (presets.length === 0) {
-            group.innerHTML = '<div class="op-image-loading"><span>暂无可选画师串</span></div>';
-            return;
-        }
-        presets.forEach(function(preset) {
-            var card = document.createElement("button");
-            card.type = "button";
-            card.className = "op-artist-card";
-            card.setAttribute("data-value", preset.id || "");
-
-            if (preset.thumbnailUrl) {
-                var img = document.createElement("img");
-                img.className = "op-artist-thumb";
-                img.src = preset.thumbnailUrl;
-                img.alt = "";
-                img.loading = "lazy";
-                img.decoding = "async";
-                card.appendChild(img);
-            } else {
-                var fallback = document.createElement("span");
-                fallback.className = "op-artist-thumb-fallback";
-                fallback.textContent = "画";
-                card.appendChild(fallback);
-            }
-
-            var name = document.createElement("span");
-            name.className = "op-artist-name";
-            name.textContent = preset.name || preset.id || "未命名画师串";
-            card.appendChild(name);
-            group.appendChild(card);
-        });
-        opSetChoiceValue("cfgImgArtistPresetId", selectedId || "default-anime", "default-anime");
-    }
-
-    function opBuildSuccessRateMap(data) {
-        var result = {};
-        if (!data || !Array.isArray(data.rates)) return result;
-        data.rates.forEach(function(row) {
-            if (!row || !row.modelId) return;
-            result[row.modelId] = {
-                success: Number(row.success) || 0,
-                total: Number(row.total) || 0
-            };
-        });
-        return result;
-    }
-
-    async function opFetchConversationAction(action) {
-        return opPostConversation({ action: action });
-    }
-
-    async function opLoadSuccessRates() {
-        try {
-            var rates = await opFetchConversationAction("model_success_rates");
-            opModelSuccessRates = opBuildSuccessRateMap(rates);
-        } catch (err) {
-            console.log("加载模型成功率失败：", err);
-            opModelSuccessRates = {};
-        }
-    }
-
-    async function opLoadAgentModelOptions(shouldRender) {
-        opRenderAgentModelLoading();
-        var results = await Promise.allSettled([
-            opFetchConversationAction("agent_models"),
-            opFetchConversationAction("credit_balance")
-        ]);
-        if (results[0].status === "fulfilled") {
-            var data = results[0].value;
-            opAgentModels = data && Array.isArray(data.agentModels) ? data.agentModels : [];
-            opAgentDefaultModelId = data && typeof data.agentDefaultModelId === "string" ? data.agentDefaultModelId : "";
+        if (isEmbedPage) {
+            void opShowAgentControlPanel(opCurrentPage);
         } else {
-            console.log("加载对话模型选项失败：", results[0].reason);
-            opAgentModels = [];
-            opAgentDefaultModelId = "";
+            opDestroyAgentControl();
         }
-        if (results[1].status === "fulfilled") {
-            var credit = results[1].value;
-            var creditValue = credit ? Number(credit.creditBalance) : NaN;
-            opAgentCreditBalance = Number.isFinite(creditValue) ? creditValue : null;
-        } else {
-            console.log("加载智能体余额失败：", results[1].reason);
-            opAgentCreditBalance = null;
-        }
-        if (shouldRender !== false) opRenderAgentModels(opGetChoiceValue("cfgAgentModel", opResolvedAgentDefaultModelId()));
-    }
-
-    async function opLoadImageOptions(shouldRender) {
-        opRenderImageLoading();
-        var results = await Promise.allSettled([
-            opFetchConversationAction("image_models"),
-            opFetchConversationAction("image_presets")
-        ]);
-        if (results[0].status === "fulfilled") {
-            opImageModels = Array.isArray(results[0].value) ? results[0].value : [];
-        } else {
-            console.log("加载生图模型失败：", results[0].reason);
-            opImageModels = opFallbackImageModels.slice();
-        }
-        if (results[1].status === "fulfilled") {
-            opArtistPresets = Array.isArray(results[1].value) ? results[1].value : [];
-        } else {
-            console.log("加载画师串失败：", results[1].reason);
-            opArtistPresets = opFallbackArtistPresets.slice();
-        }
-        if (shouldRender !== false) {
-            opRenderImageModels(opGetChoiceValue("cfgAgentImageModel", ""));
-            opRenderArtistPresets(opGetChoiceValue("cfgImgArtistPresetId", "default-anime"));
-        }
-    }
-
-    async function opLoadVisionModelOptions(shouldRender) {
-        if (!opVisionModels.length) opRenderVisionModelLoading();
-        try {
-            var data = await opFetchConversationAction("vision_models");
-            opVisionModels = data && Array.isArray(data.models) ? data.models : [];
-            opVisionDefaultModelId = data && typeof data.defaultModelId === "string" ? data.defaultModelId : "";
-        } catch (err) {
-            console.log("加载识图模型失败：", err);
-            opVisionModels = [];
-            opVisionDefaultModelId = "";
-        }
-        if (shouldRender !== false) opRenderVisionModels(opDesiredConfig.agent_vision_model_id || "");
     }
 
     function opSaveSegmentedOutput(enabled) {
@@ -2985,211 +2187,12 @@ document.addEventListener("DOMContentLoaded", function (event) {
         opQueueConfigPatch({ segmented_output_enabled: enabled });
     }
 
-    async function opLoadStyleOptions() {
-        var group = document.getElementById("cfgStyle");
-        if (group) group.innerHTML = '<div class="op-image-loading"><span class="op-loading-spinner"></span><span>正在加载文风...</span></div>';
-        try {
-            var data = await opFetchConversationAction("public_list");
-            if (data && !data.error && Array.isArray(data)) {
-                opStyles = data;
-            } else {
-                opStyles = [];
-            }
-        } catch (err) {
-            console.log("加载文风列表失败：", err);
-            opStyles = [];
-        }
-        opStyleLoaded = true;
-        opRenderStyles(opCurrentStyleId);
-    }
-
-    function opUpdateStyleHero(selectedId) {
-        var heroValue = document.getElementById("opStyleCurrent");
-        if (!heroValue) return;
-        if (!selectedId) {
-            heroValue.textContent = "-";
-            return;
-        }
-        if (!opStyleLoaded) {
-            heroValue.textContent = "加载中…";
-            return;
-        }
-        var name = "";
-        opStyles.forEach(function(s) {
-            if (s.id === selectedId) name = s.name || s.id;
-        });
-        heroValue.textContent = name || "-";
-    }
-
-    function opRenderStyles(selectedId) {
-        var group = document.getElementById("cfgStyle");
-        if (!group) return;
-        group.innerHTML = "";
-        if (opStyles.length === 0) {
-            group.innerHTML = '<div class="op-image-loading"><span>暂无可选文风</span></div>';
-            opUpdateStyleHero(selectedId);
-            return;
-        }
-        opStyles.forEach(function(style) {
-            var value = style.id || "";
-            var card = document.createElement("button");
-            card.type = "button";
-            card.className = "op-choice-card op-style-card";
-            card.setAttribute("data-value", value);
-
-            var head = document.createElement("div");
-            head.className = "op-model-card-head";
-
-            var title = document.createElement("span");
-            title.className = "op-choice-title op-model-title";
-            title.textContent = style.name || style.id || "未命名文风";
-
-            var action = document.createElement("span");
-            action.className = "op-choice-action";
-            action.textContent = value === selectedId ? "已启用" : "选择";
-
-            head.appendChild(title);
-            head.appendChild(action);
-            card.appendChild(head);
-
-            if (style.summary) {
-                var summary = document.createElement("div");
-                summary.className = "op-style-summary";
-                summary.textContent = style.summary;
-                card.appendChild(summary);
-            }
-            group.appendChild(card);
-        });
-        if (selectedId) opSetChoiceValue("cfgStyle", selectedId);
-        opUpdateStyleHero(selectedId || opGetChoiceValue("cfgStyle", ""));
-    }
-
-    function opGetChoiceValue(groupId, fallbackValue) {
-        var group = document.getElementById(groupId);
-        if (!group) return fallbackValue || "";
-        var active = group.querySelector(".active[data-value]");
-        if (active) return active.getAttribute("data-value");
-        var first = group.querySelector("[data-value]");
-        return first ? first.getAttribute("data-value") : (fallbackValue || "");
-    }
-
-    function opSetChoiceValue(groupId, value, fallbackValue) {
-        var group = document.getElementById(groupId);
-        if (!group) return;
-        var options = group.querySelectorAll("[data-value]");
-        var target = null;
-        options.forEach(function(option) {
-            if (option.getAttribute("data-value") === value) {
-                target = option;
-            }
-        });
-        if (!target && fallbackValue !== undefined) {
-            options.forEach(function(option) {
-                if (option.getAttribute("data-value") === fallbackValue) {
-                    target = option;
-                }
-            });
-        }
-        if (!target && options.length > 0) target = options[0];
-        options.forEach(function(option) {
-            var selected = option === target;
-            option.classList.toggle("active", selected);
-            option.setAttribute("aria-pressed", selected ? "true" : "false");
-            var action = option.querySelector(".op-choice-action");
-            if (action) action.textContent = selected ? "已启用" : "选择";
-        });
-    }
-
-    function opBindChoiceGroup(groupId) {
-        var group = document.getElementById(groupId);
-        if (!group) return;
-        group.addEventListener("click", function(event) {
-            var clickTarget = event.target.nodeType === 3 ? event.target.parentElement : event.target;
-            var target = clickTarget.closest("[data-value]");
-            if (!target || !group.contains(target)) return;
-            var nextValue = target.getAttribute("data-value");
-            if (opGetChoiceValue(groupId, "") === nextValue) return;
-            opSetChoiceValue(groupId, nextValue);
-            if (groupId === "cfgAgentModel") opUpdateAgentModelHero();
-            if (groupId === "cfgAgentModel") {
-                var defaultAgentModelId = opResolvedAgentDefaultModelId();
-                opQueueConfigPatch({ agent_model_id: nextValue === defaultAgentModelId ? "" : nextValue });
-            } else if (groupId === "cfgAgentImageModel") {
-                opQueueConfigPatch({ agent_image_model_id: nextValue });
-            } else if (groupId === "cfgImgSize" || groupId === "cfgImgArtistPresetId") {
-                opQueueConfigPatch({
-                    img_size: opGetChoiceValue("cfgImgSize", "landscape"),
-                    img_artist_preset_id: opGetChoiceValue("cfgImgArtistPresetId", "default-anime")
-                });
-            } else if (groupId === "cfgStyle") {
-                opQueueConfigPatch({ dialogueStyleId: nextValue });
-                opUpdateStyleHero(nextValue);
-            }
-        });
-        opSetChoiceValue(groupId, opGetChoiceValue(groupId));
-    }
-
-    opBindChoiceGroup("cfgAgentModel");
-    opBindChoiceGroup("cfgAgentImageModel");
-    opBindChoiceGroup("cfgImgSize");
-    opBindChoiceGroup("cfgImgArtistPresetId");
-    opBindChoiceGroup("cfgStyle");
-
-    var opVisionModelSelect = document.getElementById("cfgAgentVisionModel");
-    if (opVisionModelSelect) {
-        opVisionModelSelect.addEventListener("change", function() {
-            var nextValue = opVisionModelSelect.value || "";
-            if (!nextValue || opDesiredConfig.agent_vision_model_id === nextValue) return;
-            opQueueConfigPatch({ agent_vision_model_id: nextValue });
-            opRenderVisionModels(nextValue);
-        });
-    }
-
-    function opCollectConfigPatch() {
-        var config = {
-            img_size: opGetChoiceValue("cfgImgSize", "landscape"),
-            img_artist_preset_id: opGetChoiceValue("cfgImgArtistPresetId", "default-anime"),
-            agent_image_model_id: opGetChoiceValue("cfgAgentImageModel", "aob0wkxmi3"),
-            agent_vision_model_id: (document.getElementById("cfgAgentVisionModel") || {}).value || "",
-            segmented_output_enabled: segConfig.enabled === true,
-            time_awareness_enabled: opTimeAwarenessToggle?.checked === true,
-            random_proactive_enabled: opRandomProactiveEnabled === true,
-            scheduled_proactive_enabled: opScheduledProactiveEnabled === true,
-            dialogueStyleId: (function() {
-                var active = document.querySelector("#cfgStyle .active[data-value]");
-                return active ? active.getAttribute("data-value") : "";
-            })()
-        };
-        if (opAgentModels.length > 0) {
-            var defaultAgentModelId = opResolvedAgentDefaultModelId();
-            var pickedAgentModelId = opGetChoiceValue("cfgAgentModel", defaultAgentModelId);
-            config.agent_model_id = pickedAgentModelId && pickedAgentModelId !== defaultAgentModelId ? pickedAgentModelId : "";
-        }
-        return config;
-    }
-
     function opHasOwn(obj, key) {
         return Object.prototype.hasOwnProperty.call(obj, key);
     }
 
     function opApplyConfigPatchToControls(patch) {
         if (!patch) return;
-        if (opHasOwn(patch, "agent_model_id")) {
-            opSetChoiceValue("cfgAgentModel", opDisplayAgentModelId(patch.agent_model_id), opResolvedAgentDefaultModelId());
-            opUpdateAgentModelHero();
-        }
-        if (opHasOwn(patch, "agent_image_model_id")) {
-            opSetChoiceValue("cfgAgentImageModel", patch.agent_image_model_id || "", "");
-        }
-        if (opHasOwn(patch, "agent_vision_model_id")) {
-            opRenderVisionModels(patch.agent_vision_model_id || "");
-        }
-        if (opHasOwn(patch, "img_size")) {
-            opSetChoiceValue("cfgImgSize", patch.img_size || "landscape", "landscape");
-        }
-        if (opHasOwn(patch, "img_artist_preset_id")) {
-            opSetChoiceValue("cfgImgArtistPresetId", patch.img_artist_preset_id || "default-anime", "default-anime");
-        }
         if (opHasOwn(patch, "segmented_output_enabled")) {
             var previousSegmented = segConfig.enabled === true;
             segConfig.enabled = patch.segmented_output_enabled === true;
@@ -3200,37 +2203,13 @@ document.addEventListener("DOMContentLoaded", function (event) {
         if (opHasOwn(patch, "time_awareness_enabled") && opTimeAwarenessToggle) {
             opTimeAwarenessToggle.checked = patch.time_awareness_enabled === true;
         }
-        if (opHasOwn(patch, "random_proactive_enabled")) {
-            opRandomProactiveEnabled = patch.random_proactive_enabled === true;
-            if (opRandomProactiveToggle) opRandomProactiveToggle.checked = opRandomProactiveEnabled;
-        }
-        if (opHasOwn(patch, "scheduled_proactive_enabled")) {
-            opScheduledProactiveEnabled = patch.scheduled_proactive_enabled === true;
-            if (opScheduledProactiveToggle) opScheduledProactiveToggle.checked = opScheduledProactiveEnabled;
-        }
-        if (opHasOwn(patch, "dialogue_style_id")) {
-            opCurrentStyleId = patch.dialogue_style_id || "";
-            if (opStyleLoaded && opCurrentStyleId) opSetChoiceValue("cfgStyle", opCurrentStyleId);
-            opUpdateStyleHero(opCurrentStyleId);
-        }
-        if (opTimeAwarenessToggle) opTimeAwarenessToggle.disabled = opRandomProactiveEnabled || opScheduledProactiveEnabled;
-        opSyncProactiveNotice();
-        opRenderProactiveSchedules();
     }
 
     function opConfigPatchFromServer(data) {
-        var imgSettings = data && data.agentImageSettings || {};
+        // 模型/生图/文风/规则/主动消息等配置由 msk 托管控制台管理，前端只保留显示相关开关。
         return {
-            agent_model_id: data && data.agentModelId || "",
-            agent_image_model_id: data && data.agentImageModelId || "",
-            agent_vision_model_id: data && data.agentVisionModelId || "",
-            img_size: imgSettings.size || "landscape",
-            img_artist_preset_id: imgSettings.artistPresetId || "default-anime",
             segmented_output_enabled: !!(data && data.segmentedOutputEnabled === true),
-            time_awareness_enabled: !(data && data.timeAwarenessEnabled === false),
-            random_proactive_enabled: !!(data && data.randomProactiveEnabled === true),
-            scheduled_proactive_enabled: !!(data && data.scheduledProactiveEnabled === true),
-            dialogue_style_id: data && data.dialogueStyleId || ""
+            time_awareness_enabled: !(data && data.timeAwarenessEnabled === false)
         };
     }
 
@@ -3257,20 +2236,7 @@ document.addEventListener("DOMContentLoaded", function (event) {
         });
         opApplyConfigPatchToControls(safePatch);
         opConfigLoadedSessionId = opCurrentSessionId;
-        opSyncMemorySettingsLink();
-        if (data.ruleOverrides && typeof data.ruleOverrides === "object" && !Array.isArray(data.ruleOverrides)) {
-            opRuleOverrides = Object.assign({}, data.ruleOverrides);
-        } else {
-            opRuleOverrides = {};
-        }
-        if (opCurrentPage === "rules") opEnsureRulesLoaded();
-        if (opProactiveLastError) {
-            var errorLines = [];
-            if (data.randomProactiveLastError) errorLines.push("上次随机主动消息执行失败，本次已跳过。");
-            if (data.scheduledProactiveLastError) errorLines.push("上次定时主动消息执行失败，本次已跳过。");
-            opProactiveLastError.hidden = errorLines.length === 0;
-            opProactiveLastError.textContent = errorLines.join(" ");
-        }
+        opSyncAgentControlSession();
     }
 
     function opResetConfigStateForSession(sessionId) {
@@ -3285,11 +2251,6 @@ document.addEventListener("DOMContentLoaded", function (event) {
         opConfirmedConfig = {};
         opDesiredConfig = {};
         opConfigLoadRevision++;
-        opRules = [];
-        opRulesLoading = false;
-        opRuleSaving = false;
-        opRuleOverrides = {};
-        opRulesLoadedSessionId = null;
     }
 
     function opQueueConfigPatch(patch) {
@@ -3344,10 +2305,6 @@ document.addEventListener("DOMContentLoaded", function (event) {
                 var result = await opPostConversation(payload);
                 if (!result) throw new Error("请求未完成");
                 keys.forEach(function(key) { opConfirmedConfig[key] = patch[key]; });
-                if (opHasOwn(patch, "scheduled_proactive_enabled") && patch.scheduled_proactive_enabled && opProactiveReloadAfterSave) {
-                    opProactiveReloadAfterSave = false;
-                    if (sessionId === (opCurrentSessionId || currentSessionId)) void opLoadProactiveSchedules();
-                }
                 if (sessionId === (opCurrentSessionId || currentSessionId) && Object.keys(opConfigPendingPatch).length === 0) {
                     opShowStatus("设置已同步", "success");
                 }
@@ -3387,6 +2344,249 @@ document.addEventListener("DOMContentLoaded", function (event) {
                 break;
             }
         }
+    }
+
+    // ==================== msk 托管控制台（agent-control-embed） ====================
+    // 模型/生图/主动消息/记忆/世界书/规则/文风面板由 msk 的 /agents/embed 页面托管，
+    // 本项目只负责抽屉、导航和聊天界面。协议见 misskey 项目 docs/agent-control-embed.md。
+    var AGENT_CONTROL_PANELS = ["model", "draw", "proactive", "memory", "worldbook", "rules", "style"];
+    var opAgentControlHost = document.getElementById("opAgentControlHost");
+    var opAgentControlStatus = document.getElementById("opAgentControlStatus");
+    var opAgentControlScriptPromise = null;
+    var opAgentControl = null;
+    var opAgentControlPanel = "";
+    var opAgentControlPending = null;
+    var opAgentControlRevealTimer = null;
+
+    function opLoadAgentControlScript() {
+        if (window.MisskeyAgentControl) return Promise.resolve();
+        if (opAgentControlScriptPromise) return opAgentControlScriptPromise;
+        opAgentControlScriptPromise = new Promise(function(resolve, reject) {
+            var script = document.createElement("script");
+            // msk 以 max-age=86400 提供该脚本且无内容指纹，必须带版本号否则浏览器整天都用旧缓存（缺 setPanel 等新方法）
+            script.src = MSK_ORIGIN + "/agent-control-embed.js?v=20260918-03";
+            script.onload = function() { resolve(); };
+            script.onerror = function() {
+                opAgentControlScriptPromise = null;
+                reject(new Error("无法加载 " + MSK_ORIGIN + "/agent-control-embed.js"));
+            };
+            document.head.appendChild(script);
+        });
+        return opAgentControlScriptPromise;
+    }
+
+    function opAgentControlAppearance() {
+        return {
+            colorScheme: "dark",
+            accent: "#e6a15a",
+            background: "#2d2d2d",
+            panel: "#3a3a3a",
+            foreground: "#f2ede7",
+            muted: "#b9b2a9",
+            divider: "#555555",
+            radius: "12px",
+            fontFamily: '"微软雅黑", Arial, sans-serif',
+            fontSize: "14px",
+            contentMaxWidth: "100%",
+            spacing: "16px"
+        };
+    }
+
+    function opShowAgentControlError(message) {
+        if (!opAgentControlStatus) return;
+        if (!message) {
+            opAgentControlStatus.hidden = true;
+            opAgentControlStatus.textContent = "";
+            return;
+        }
+        opAgentControlStatus.hidden = false;
+        opAgentControlStatus.textContent = message;
+    }
+
+    function opDestroyAgentControl() {
+        if (opAgentControlRevealTimer) {
+            clearTimeout(opAgentControlRevealTimer);
+            opAgentControlRevealTimer = null;
+        }
+        if (opAgentControlPending) {
+            try { opAgentControlPending.destroy(); } catch (err) {
+                console.log("销毁待加载控制台失败：", err);
+            }
+            opAgentControlPending = null;
+        }
+        if (opAgentControl) {
+            try { opAgentControl.destroy(); } catch (err) {
+                console.log("销毁控制台失败：", err);
+            }
+            opAgentControl = null;
+        }
+        opAgentControlPanel = "";
+        opShowAgentControlError("");
+        if (opAgentControlHost) opAgentControlHost.innerHTML = "";
+    }
+
+    function opStageAgentControlIframe(control) {
+        // 新 iframe 先隐身叠在旧内容上，等自身鉴权并测出内容高度后再替换，避免加载过程闪动。
+        control.iframe.style.position = "absolute";
+        control.iframe.style.top = "0";
+        control.iframe.style.left = "0";
+        control.iframe.style.visibility = "hidden";
+    }
+
+    function opRevealAgentControl(control, panel) {
+        if (opAgentControlPending !== control || opAgentControlPanel !== panel) return;
+        opAgentControlPending = null;
+        if (opAgentControlRevealTimer) {
+            clearTimeout(opAgentControlRevealTimer);
+            opAgentControlRevealTimer = null;
+        }
+        var old = opAgentControl;
+        opAgentControl = control;
+        if (opAgentControlHost) {
+            Array.prototype.slice.call(opAgentControlHost.children).forEach(function(el) {
+                if (el !== control.iframe) el.remove();
+            });
+        }
+        control.iframe.style.position = "";
+        control.iframe.style.top = "";
+        control.iframe.style.left = "";
+        control.iframe.style.visibility = "";
+        if (old) {
+            try { old.destroy(); } catch (err) {
+                console.log("销毁旧控制台失败：", err);
+            }
+        }
+    }
+
+    async function opShowAgentControlPanel(panel) {
+        if (!opAgentControlHost) return;
+        var sessionId = opCurrentSessionId || currentSessionId;
+        if (opAgentControlRevealTimer) {
+            clearTimeout(opAgentControlRevealTimer);
+            opAgentControlRevealTimer = null;
+        }
+        if (opAgentControlPending) {
+            try { opAgentControlPending.destroy(); } catch (err) {
+                console.log("销毁待加载控制台失败：", err);
+            }
+            opAgentControlPending = null;
+        }
+        if (!sessionId) {
+            opDestroyAgentControl();
+            opAgentControlHost.innerHTML = '<div class="op-image-loading op-agent-control-empty">请先在“会话”页创建会话，再配置智能体。</div>';
+            return;
+        }
+        opAgentControlPanel = panel;
+        // 同会话下直接让已启动的 iframe 内部切路由（需要 msk 新版宿主脚本支持 setPanel），避免整页重启
+        if (opAgentControl && opAgentControl.sessionId === sessionId && typeof opAgentControl.setPanel === "function") {
+            opAgentControl.setPanel(panel);
+            return;
+        }
+        if (!opAgentControl) {
+            opAgentControlHost.innerHTML = '<div class="op-image-loading op-agent-control-loading"><span class="op-loading-spinner"></span><span>正在加载控制台...</span></div>';
+        }
+        try {
+            await opLoadAgentControlScript();
+        } catch (err) {
+            opShowAgentControlError(err.message || "控制台脚本加载失败");
+            return;
+        }
+        if (opAgentControlPanel !== panel) return;
+        if (!window.MisskeyAgentControl) {
+            opShowAgentControlError("msk 宿主脚本不可用");
+            return;
+        }
+        var control;
+        try {
+            control = new window.MisskeyAgentControl({
+                origin: MSK_ORIGIN,
+                sessionId: sessionId,
+                panel: panel,
+                token: function() {
+                    if (!mskToken) throw new Error("没有可用的 Misskey token");
+                    return mskToken;
+                },
+                appearance: opAgentControlAppearance(),
+                autoHeight: false,
+                title: "msk 智能体控制台",
+                onEvent: function(message) {
+                    if (control !== opAgentControl) {
+                        if (!message || typeof message.type !== "string") return;
+                        // 鉴权通过即切换：iframe 固定高度自身滚动，加载态由 msk 内部 UI 呈现
+                        if (message.type === "misskey:agent-control:authenticated"
+                            || message.type === "misskey:agent-control:error") {
+                            opRevealAgentControl(control, panel);
+                            if (message.type === "misskey:agent-control:error") opHandleAgentControlEvent(message);
+                        }
+                        return;
+                    }
+                    opHandleAgentControlEvent(message);
+                }
+            });
+        } catch (err) {
+            opShowAgentControlError("控制台初始化失败：" + (err.message || err));
+            return;
+        }
+        opStageAgentControlIframe(control);
+        control.mount(opAgentControlHost);
+        opAgentControlPending = control;
+        opAgentControlRevealTimer = setTimeout(function() {
+            opRevealAgentControl(control, panel);
+        }, 5000);
+    }
+
+    function opSyncAgentControlToken() {
+        if (opAgentControl && mskToken) opAgentControl.setToken(mskToken);
+    }
+
+    function opSyncAgentControlSession() {
+        if (AGENT_CONTROL_PANELS.indexOf(opCurrentPage) === -1) return;
+        var sessionId = opCurrentSessionId || currentSessionId;
+        if (!sessionId) return;
+        if (opAgentControl && opAgentControl.sessionId === sessionId) return;
+        if (opAgentControlPending && opAgentControlPending.sessionId === sessionId) return;
+        void opShowAgentControlPanel(opCurrentPage);
+    }
+
+    function opHandleAgentControlEvent(message) {
+        if (!message || typeof message.type !== "string") return;
+        if (message.type === "misskey:agent-control:close-requested") {
+            opClosePanel();
+            void opLoadSessions();
+            return;
+        }
+        if (message.type === "misskey:agent-control:navigate-message"
+            || message.type === "misskey:agent-control:navigate-context-divider") {
+            opClosePanel();
+            scrollToMessageById(message.messageId);
+            return;
+        }
+        if (message.type === "misskey:agent-control:open-url") {
+            if (typeof message.url === "string" && message.url.charAt(0) === "/") {
+                window.open(MSK_ORIGIN + message.url, "_blank", "noopener");
+            }
+            return;
+        }
+        if (message.type === "misskey:agent-control:error") {
+            opShowAgentControlError(message.code === "AUTHENTICATION_FAILED"
+                ? "Token 鉴权失败，请重新完成 Misskey 授权后再试。"
+                : ("控制台错误：" + (message.message || message.code || "未知")));
+        }
+    }
+
+    function scrollToMessageById(messageId) {
+        if (!messageId || !aliyaText) return;
+        var raw = String(messageId);
+        var selector = '[data-message-id="' + (window.CSS && CSS.escape ? CSS.escape(raw) : raw) + '"]';
+        var el = aliyaText.querySelector(selector);
+        if (!el) {
+            console.log("未找到目标消息：", messageId);
+            return;
+        }
+        el.scrollIntoView({ behavior: "smooth", block: "center" });
+        el.classList.remove("msg-highlight");
+        void el.offsetWidth;
+        el.classList.add("msg-highlight");
     }
 
     function opRenderSessionLoading() {
@@ -3529,7 +2729,6 @@ document.addEventListener("DOMContentLoaded", function (event) {
             if (loadRevision !== opConfigLoadRevision) return;
             if (!res.ok || data.error) throw new Error(data.error || "加载配置失败");
             opAdoptServerConfig(data, revisionSnapshot);
-            if (opCurrentPage === "proactive") opLoadProactiveSchedules();
         } catch (err) {
             console.log("加载会话配置失败：", err);
             if (loadRevision === opConfigLoadRevision) opShowStatus("加载配置失败：" + err.message, "error");
@@ -3614,30 +2813,12 @@ document.addEventListener("DOMContentLoaded", function (event) {
         var hasCurrentConfig = !!opConfigLoadedSessionId && opConfigLoadedSessionId === (opCurrentSessionId || currentSessionId);
         opSetInitialLoading(!hasCurrentConfig);
         opSetPage(opCurrentPage || "session");
-        if (hasCurrentConfig) opApplyConfigPatchToControls(opDesiredConfig);
         opRenderSessionLoading();
-        opRenderAgentModelLoading();
-        opRenderImageLoading();
-        if (opVisionModels.length) opRenderVisionModels(opDesiredConfig.agent_vision_model_id || "");
-        else opRenderVisionModelLoading();
-        opRenderRules();
         if (opPanelLoadPromise) return opPanelLoadPromise;
         opPanelLoadPromise = (async function() {
-            var sessionsPromise = opLoadSessions();
             var configPromise = opLoadConfig();
-            await Promise.all([
-                opLoadSuccessRates(),
-                opLoadAgentModelOptions(false),
-                opLoadImageOptions(false),
-                opLoadVisionModelOptions(false),
-                configPromise
-            ]);
-            opRenderAgentModels(opDisplayAgentModelId(opDesiredConfig.agent_model_id));
-            opRenderImageModels(opDesiredConfig.agent_image_model_id || "");
-            opRenderArtistPresets(opDesiredConfig.img_artist_preset_id || "default-anime");
-            opRenderVisionModels(opDesiredConfig.agent_vision_model_id || "");
-            opApplyConfigPatchToControls(opDesiredConfig);
-            await sessionsPromise;
+            await opLoadSessions();
+            await configPromise;
         })();
         try {
             await opPanelLoadPromise;
@@ -3648,6 +2829,7 @@ document.addEventListener("DOMContentLoaded", function (event) {
 
     function opClosePanel() {
         opOverlay.classList.remove("active");
+        opDestroyAgentControl();
     }
 
     operationBtn.addEventListener("click", opOpenPanel);
@@ -3655,21 +2837,11 @@ document.addEventListener("DOMContentLoaded", function (event) {
     opOverlay.addEventListener("click", function(e) {
         if (e.target === opOverlay) opClosePanel();
     });
-    if (opRandomProactiveToggle) opRandomProactiveToggle.addEventListener("change", function() { opSaveProactiveSetting("random", opRandomProactiveToggle.checked === true); });
-    if (opScheduledProactiveToggle) opScheduledProactiveToggle.addEventListener("change", function() { opSaveProactiveSetting("scheduled", opScheduledProactiveToggle.checked === true); });
     if (opTimeAwarenessToggle) {
         opTimeAwarenessToggle.addEventListener("change", function() {
-            var enabled = opTimeAwarenessToggle.checked === true;
-            if (!enabled && (opRandomProactiveEnabled || opScheduledProactiveEnabled)) {
-                opTimeAwarenessToggle.checked = true;
-                opShowStatus("请先关闭随机主动消息和定时主动消息", "error");
-                return;
-            }
-            opSyncProactiveNotice();
-            opQueueConfigPatch({ time_awareness_enabled: enabled });
+            opQueueConfigPatch({ time_awareness_enabled: opTimeAwarenessToggle.checked === true });
         });
     }
-    if (opProactiveRefreshBtn) opProactiveRefreshBtn.addEventListener("click", opLoadProactiveSchedules);
     if (opSubnav) {
         opSubnav.addEventListener("click", function(e) {
             var target = e.target.closest("[data-op-target]");
@@ -3687,7 +2859,6 @@ document.addEventListener("DOMContentLoaded", function (event) {
 
     async function opDoCreate() {
         if (opSessionActionBusy) return;
-        var initialPatch = opCollectConfigPatch();
         opSetSessionActionBusy(true);
         opCreateBtn.disabled = true;
         opShowStatus("正在创建会话...");
@@ -3704,13 +2875,9 @@ document.addEventListener("DOMContentLoaded", function (event) {
                 opCurrentSessionId = data.session_id;
                 currentSessionId = data.session_id;
                 opResetConfigStateForSession(data.session_id);
-                opSyncMemorySettingsLink();
-                opApplyConfigPatchToControls(initialPatch);
                 var newSession = { id: data.session_id, name: "新会话" };
                 opSessions.unshift(newSession);
                 opRenderSessions();
-                opQueueConfigPatch(initialPatch);
-                await opWaitForPendingConfigSaves();
                 await Promise.all([opLoadConfig(), fetchInitialMessages()]);
                 opShowStatus("会话创建成功", "success");
             } else {

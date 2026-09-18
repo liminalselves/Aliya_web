@@ -1,15 +1,14 @@
 # Aliya Web
 
-Aliya Web 是一个面向 Misskey Agent 的本地 Web 前端与 Flask 代理服务，提供对话、会话管理、模型选择、生图配置、分段输出和 Token 授权等功能。
+Aliya Web 是一个面向 Misskey Agent 的本地 Web 前端与 Flask 代理服务，提供对话、会话管理、msk 托管控制台（模型/生图/主动消息/记忆/世界书/规则/文风）、分段输出和 Token 授权等功能。
 
 ## 功能
 
 - 与 Aliya Agent 进行对话，并轮询获取新消息
 - Misskey MiAuth 授权和 Token 验证
 - Aliya 会话的创建、切换、重命名和删除
-- 对话模型、生图模型、画师串和图片尺寸选择
+- msk 托管控制台：模型、生图、主动消息、记忆、世界书、规则、文风面板通过 `agent-control-embed` 嵌入（协议见 misskey 项目 `docs/agent-control-embed.md`）
 - 分段输出：仅影响前端展示与播放，不改写原始消息
-- 模型、生图和会话列表加载动画
 - 桌面端与移动端页面
 
 ## 技术栈
@@ -62,6 +61,16 @@ python -m pip install -r requirements.txt
 python misskey_server.py
 ```
 
+默认连接生产站 `https://misskey.liminalselves.top`。启动命令后缀可指定 msk 实例源（本地开发联调）：
+
+```powershell
+python misskey_server.py http://127.0.0.1:3000
+```
+
+该参数同时作用于后端代理和前端（通过 `/js/config.js` 动态注入，前端无需改动）。不带协议时，`localhost`/`127.0.0.1` 按 http 处理，其余按 https 处理。
+
+使用官方域名时，会话列表只显示 Aliya 角色的会话；使用非官方域名时（非官方实例上不存在 Aliya 角色），会话列表显示全部会话，且跳过标准文风强制订阅。
+
 默认监听地址为：
 
 ```text
@@ -81,12 +90,12 @@ python misskey_server.py
 
 ## 页面说明
 
-- `Operation`：选择对话模型、生图模型、记忆设置和会话。
+- `Operation`：会话管理、消息显示开关，以及嵌入的 msk 托管控制台（模型/生图/主动消息/记忆/世界书/规则/文风）。
 - `Settings`：填写或更新 Misskey API Token。
-- 分段输出开关：修改后点击“保存”，保存成功会立即刷新当前会话并关闭 Operation 面板。
 
 ## 配置与安全
 
+- msk 实例源由启动参数控制（见「启动」一节），后端 `MSK_ORIGIN` 与前端 `/js/config.js` 动态路由都来源于它。
 - 前端默认使用同源 API，也就是请求当前站点下的 `/api/*`。如需前后端分离部署，可以在页面脚本加载前设置 `window.ALIYA_API_BASE = "https://你的后端域名"`。
 - Misskey Token 由页面提交到本地 Flask 服务，不应写入源码、README 或日志。
 - 后端默认只监听 `127.0.0.1`，如需局域网访问，请明确设置 `ALIYA_HOST` 并配置防火墙及访问控制。
@@ -98,9 +107,9 @@ python misskey_server.py
 
 确认 Flask 后端正在运行，并检查浏览器是否能访问 `http://127.0.0.1:4000`。随后在 `Settings` 中重新完成授权或验证 Token。
 
-### 模型列表为空
+### 控制台面板加载失败或提示鉴权失败
 
-确认 Token 有效且网络可以访问 Misskey 服务。模型元数据具有缓存机制，必要时可重启后端再次加载。
+确认 Token 有效，且 `js/config.js` 与后端 `MSK_ORIGIN` 指向的 msk 实例已部署 `/agents/embed` 托管控制台。生产站未部署该功能时，面板会提示脚本加载失败或鉴权失败。
 
 ### PowerShell 中文乱码
 
@@ -118,7 +127,7 @@ node --check js/index.js
 node --check js/index-m.js
 python -m py_compile misskey__agent_server.py
 ```
-s
+
 ## 致谢与来源
 
 本项目原始前端界面来自小黑盒用户(su)：[小黑盒用户主页](https://www.xiaoheihe.cn/app/user/profile/34126245)。

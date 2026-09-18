@@ -1,5 +1,5 @@
 from pathlib import Path, PurePosixPath
-from flask import Flask, request, jsonify, send_from_directory, abort, has_request_context
+from flask import Flask, Response, request, jsonify, send_from_directory, abort, has_request_context
 from flask_cors import CORS
 import threading
 import asyncio
@@ -8,17 +8,39 @@ import hashlib
 import json
 import os
 import re
+import sys
 import time
 import uuid
 import requests
 from requests.adapters import HTTPAdapter
 import websockets
 import logging
+from urllib.parse import urlparse
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 
 #Misskey 配置
-MSK_HOST = "misskey.liminalselves.top"
+# 启动命令第一个参数指定 msk 实例源，不传时使用默认生产站：
+#   python misskey_server.py http://127.0.0.1:3000
+# 前端通过 /js/config.js 动态路由拿到该值，无需修改任何前端文件。
+def _msk_origin_from_argv():
+    raw = (sys.argv[1] if len(sys.argv) > 1 else "").strip().rstrip("/")
+    if not raw:
+        return "https://misskey.liminalselves.top"
+    if "://" not in raw:
+        # 本地实例补 http，其余按 https 处理
+        scheme = "http" if raw.startswith(("localhost", "127.0.0.1", "[::1]")) else "https"
+        raw = scheme + "://" + raw
+    return raw
+
+MSK_ORIGIN = _msk_origin_from_argv()
+_msk_parsed = urlparse(MSK_ORIGIN)
+MSK_HOST = _msk_parsed.netloc
+MSK_WS_ORIGIN = ("wss" if _msk_parsed.scheme == "https" else "ws") + "://" + MSK_HOST
+# 非官方域名（如本地开发实例）上不存在 Aliya 角色：会话不按角色过滤（显示全部），
+# 也不做标准文风强制订阅/回写。
+IS_OFFICIAL_MSK = MSK_ORIGIN.rstrip("/") == "https://misskey.liminalselves.top"
+logging.info("MSK 实例源：%s（%s）", MSK_ORIGIN, "官方" if IS_OFFICIAL_MSK else "非官方，会话列表不过滤角色")
 msk_token = None  # 由前端通过 /api/set_token 设置
 
 # 每个 token 维护独立当前会话，避免多个浏览器或账号互相覆盖。
@@ -76,11 +98,12 @@ def add_response_headers(response):
     response.headers.setdefault(
         "Content-Security-Policy",
         "default-src 'self'; "
-        "script-src 'self'; "
+        f"script-src 'self' {MSK_ORIGIN}; "
         "style-src 'self' 'unsafe-inline'; "
-        "img-src 'self' data: blob: https:; "
+        f"img-src 'self' data: blob: https: {MSK_ORIGIN}; "
         "media-src 'self'; "
-        f"connect-src 'self' https://{MSK_HOST} wss://{MSK_HOST}; "
+        f"frame-src {MSK_ORIGIN}; "
+        f"connect-src 'self' {MSK_ORIGIN} {MSK_WS_ORIGIN}; "
         "object-src 'none'; base-uri 'self'; frame-ancestors 'self'; form-action 'self'",
     )
 
@@ -94,6 +117,9 @@ def add_response_headers(response):
         clean_path = path.lstrip("/") or "index.html"
         first_part = clean_path.split("/", 1)[0]
         if clean_path in HTML_PAGES:
+            response.headers["Cache-Control"] = "no-cache, max-age=0, must-revalidate"
+        elif clean_path == "js/config.js":
+            # 开发时会被频繁临时修改（切换 msk 实例），不允许缓存。
             response.headers["Cache-Control"] = "no-cache, max-age=0, must-revalidate"
         elif first_part in CACHEABLE_STATIC_DIRS:
             response.headers["Cache-Control"] = "public, max-age=86400"
@@ -125,7 +151,7 @@ def _misskey_headers(extra=None):
         "Content-Type": "application/json",
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
         "Accept": "application/json, text/plain, */*",
-        "Origin": f"https://{MSK_HOST}",
+        "Origin": f"{MSK_ORIGIN}",
     }
     if has_request_context():
         ip = _client_ip()
@@ -292,8 +318,9 @@ def _chat_exit(token):
 
 
 def _create_session_data(token):
-    _ensure_required_style_subscription({"styleId": DIALOGUE_STYLE_ID}, token)
-    url = f"https://{MSK_HOST}/api/agents/sessions/create"
+    if IS_OFFICIAL_MSK:
+        _ensure_required_style_subscription({"styleId": DIALOGUE_STYLE_ID}, token)
+    url = f"{MSK_ORIGIN}/api/agents/sessions/create"
     payload = {
         "characterId": CHARACTER_ID,
         "dialogueStyleId": DIALOGUE_STYLE_ID,
@@ -310,14 +337,14 @@ def _create_session_data(token):
 
 
 def _list_mine_data(token):
-    url = f"https://{MSK_HOST}/api/agents/sessions/list-mine"
+    url = f"{MSK_ORIGIN}/api/agents/sessions/list-mine"
     resp = _http_post(url, json={"i": token}, headers=_misskey_headers(), timeout=30)
     resp.raise_for_status()
     return resp.json()
 
 
 def _list_usable_styles_data(token):
-    url = f"https://{MSK_HOST}/api/agents/styles/list-usable"
+    url = f"{MSK_ORIGIN}/api/agents/styles/list-usable"
     resp = _http_post(url, json={"i": token}, headers=_misskey_headers(), timeout=30)
     resp.raise_for_status()
     data = resp.json()
@@ -333,7 +360,7 @@ def _usable_style_ids(token):
 
 
 def _show_session_data(token, session_id):
-    url = f"https://{MSK_HOST}/api/agents/sessions/show"
+    url = f"{MSK_ORIGIN}/api/agents/sessions/show"
     payload = {"i": token, "sessionId": session_id}
     resp = _http_post(url, json=payload, headers=_misskey_headers(), timeout=30)
     resp.raise_for_status()
@@ -356,6 +383,9 @@ def _session_character_id(session):
 
 
 def _is_aliya_session(session, allowed_character_ids=None):
+    # 非官方域名不存在 Aliya 角色，任何会话都允许操作。
+    if not IS_OFFICIAL_MSK:
+        return True
     character_id = _session_character_id(session)
     if allowed_character_ids is None:
         allowed_character_ids = {CHARACTER_ID}
@@ -462,6 +492,13 @@ def _string_from_json(data, key, max_len=None):
 @app.route("/", methods=["GET"])
 def index():
     return send_from_directory(FRONTEND_ROOT, "index.html")
+
+
+@app.route("/js/config.js", methods=["GET"])
+def frontend_config_script():
+    # 由启动参数决定 msk 源并注入前端，替代静态 config.js（单一权威来源）。
+    body = "window.ALIYA_MSK_ORIGIN = %s;\n" % json.dumps(MSK_ORIGIN)
+    return Response(body, mimetype="application/javascript; charset=utf-8")
 
 
 @app.route("/<path:filename>", methods=["GET"])
@@ -801,7 +838,7 @@ def conversation():
 def _misskey_api_post(token, endpoint, payload=None, timeout=30):
     body = dict(payload or {})
     body["i"] = token
-    url = f"https://{MSK_HOST}/api/{endpoint}"
+    url = f"{MSK_ORIGIN}/api/{endpoint}"
     resp = _http_post(url, json=body, headers=_misskey_headers(), timeout=timeout)
     resp.raise_for_status()
     return resp.json()
@@ -889,7 +926,7 @@ def _update_session(data, token):
     except Exception as e:
         logging.error(f"准备更新会话前获取会话失败: {e}")
         return jsonify({"error": str(e)}), 500
-    url = "https://misskey.liminalselves.top/api/agents/sessions/update"
+    url = f"{MSK_ORIGIN}/api/agents/sessions/update"
     payload = {
         "i": token,
         "sessionId": session_id,
@@ -997,7 +1034,7 @@ def model_success_rates(token):
 def list_agent_models(token):
     try:
         def load_agent_models():
-            url = f"https://{MSK_HOST}/api/meta"
+            url = f"{MSK_ORIGIN}/api/meta"
             resp = _http_post(url, json={"detail": False}, headers=_misskey_headers(), timeout=30)
             resp.raise_for_status()
             return resp.json()
@@ -1167,13 +1204,13 @@ def delete_session(data, token):
 
 def list_usable(token):
     """获取可用文风列表"""
-    url = "https://misskey.liminalselves.top/api/agents/styles/list-usable"
+    url = f"{MSK_ORIGIN}/api/agents/styles/list-usable"
     payload = {"i": token}
     headers = {
         "Content-Type": "application/json",
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
         "Accept": "application/json, text/plain, */*",
-        "Origin": f"https://{MSK_HOST}",
+        "Origin": f"{MSK_ORIGIN}",
     }
     if has_request_context():
         ip = _client_ip()
@@ -1206,7 +1243,7 @@ def _ensure_required_style_subscription(data, token):
         logging.info(f">>> 选择的文风已在可用文风列表中: {style_id}")
         return {"success": True, "alreadyUsable": True}
 
-    url = f"https://{MSK_HOST}/api/agents/styles/subscribe"
+    url = f"{MSK_ORIGIN}/api/agents/styles/subscribe"
     payload = {"i": token, "styleId": style_id}
     resp = _http_post(url, json=payload, headers=_misskey_headers(), timeout=30)
     resp.raise_for_status()
@@ -1225,7 +1262,7 @@ def _ensure_required_style_subscription(data, token):
 def subscribe_style(data, token):
     """添加文风到可用列表中"""
     style_id = data.get("dialogueStyleId") or data.get("styleId") or DIALOGUE_STYLE_ID
-    url=f"https://{MSK_HOST}/api/agents/styles/subscribe"
+    url=f"{MSK_ORIGIN}/api/agents/styles/subscribe"
     payload = {"i": token, "styleId": style_id}
     resp = _http_post(url, json=payload, headers=_misskey_headers(), timeout=30)
     resp.raise_for_status()
@@ -1233,6 +1270,9 @@ def subscribe_style(data, token):
 
 
 def _ensure_required_session_style(token, session_id, session_data=None):
+    # 非官方域名上标准文风不一定存在，跳过强制回写。
+    if not IS_OFFICIAL_MSK:
+        return
     if session_data is None:
         session_data = _show_session_data(token, session_id)
 
@@ -1249,7 +1289,7 @@ def _ensure_required_session_style(token, session_id, session_data=None):
     )
     
     _ensure_required_style_subscription({"dialogueStyleId": DIALOGUE_STYLE_ID}, token)
-    url = f"https://{MSK_HOST}/api/agents/sessions/update"
+    url = f"{MSK_ORIGIN}/api/agents/sessions/update"
     payload = {"i": token, "sessionId": session_id, "dialogueStyleId": DIALOGUE_STYLE_ID}
     resp = _http_post(url, json=payload, headers=_misskey_headers(), timeout=30)
     resp.raise_for_status()
@@ -1265,7 +1305,7 @@ def _ensure_required_session_style(token, session_id, session_data=None):
 
 def public_list(token):
     """获取广场文风列表"""
-    url="https://misskey.liminalselves.top/api/agents/styles/public-list"
+    url = f"{MSK_ORIGIN}/api/agents/styles/public-list"
     payload = {"i": token}
     try:
         resp = _http_post(url, json=payload, headers=_misskey_headers(), timeout=30)
@@ -1489,7 +1529,7 @@ def _send_to_misskey(text, token, file_id=None, session_id=None, client_request_
     except Exception as e:
         logging.error(f"发送消息前获取会话失败: {e}")
         return {"error": f"发送消息前准备会话失败: {e}"}
-    url = f"https://{MSK_HOST}/api/agents/messages/send"
+    url = f"{MSK_ORIGIN}/api/agents/messages/send"
     payload = {
         "i": token,
         "sessionId": session_id,
@@ -1502,8 +1542,8 @@ def _send_to_misskey(text, token, file_id=None, session_id=None, client_request_
         "Content-Type": "application/json",
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36",
         "Accept": "application/json, text/plain, */*",
-        "Origin": f"https://{MSK_HOST}",
-        "Referer": f"https://{MSK_HOST}/chat/agent/{session_id}"
+        "Origin": f"{MSK_ORIGIN}",
+        "Referer": f"{MSK_ORIGIN}/chat/agent/{session_id}"
     }
     if has_request_context():
         ip = _client_ip()
@@ -1604,7 +1644,7 @@ async def _listen_misskey():
         if not token:
             await asyncio.sleep(2)
             continue
-        ws_url = f"wss://{MSK_HOST}/streaming?i={token}"
+        ws_url = f"{MSK_WS_ORIGIN}/streaming?i={token}"
         connection = None
         try:
             async with websockets.connect(ws_url, open_timeout=15, close_timeout=5) as ws:
@@ -1714,7 +1754,7 @@ def _activate_misskey_token(token):
 
 def _validate_misskey_token(token):
     resp = _http_post(
-        f"https://{MSK_HOST}/api/i",
+        f"{MSK_ORIGIN}/api/i",
         json={"i": token},
         headers=_misskey_headers(),
         timeout=15,
@@ -1737,13 +1777,13 @@ def upload_image():
         return jsonify({"error": "只支持图片文件"}), 400
     try:
         resp = _http_post(
-            f"https://{MSK_HOST}/api/drive/files/create",
+            f"{MSK_ORIGIN}/api/drive/files/create",
             data={"i": token},
             files={"file": (uploaded.filename, uploaded.stream, uploaded.mimetype)},
             headers={
                 "User-Agent": "Aliya Web/1.0",
                 "Accept": "application/json, text/plain, */*",
-                "Origin": f"https://{MSK_HOST}",
+                "Origin": f"{MSK_ORIGIN}",
                 **({"X-Forwarded-For": _client_ip()} if has_request_context() and _client_ip() else {}),
             },
             timeout=60,
@@ -1815,7 +1855,7 @@ def miauth_check():
         return jsonify({"ok": False, "error": "session_id 无效"}), 400
     try:
         resp = _http_post(
-            f"https://{MSK_HOST}/api/miauth/{session_id}/check",
+            f"{MSK_ORIGIN}/api/miauth/{session_id}/check",
             json={},
             timeout=15,
         )

@@ -1532,7 +1532,7 @@ body {
 }
 .op-panel {
     position: relative;
-    width: min(1040px, 100%);
+    width: min(1200px, 100%);
     max-height: calc(100vh - 6rem);
     overflow-y: auto;
     background: #2d2d2d;
@@ -1574,7 +1574,7 @@ body {
 }
 .op-subnav {
     display: grid;
-    grid-template-columns: repeat(7, minmax(0, 1fr));
+    grid-template-columns: repeat(8, minmax(0, 1fr));
     gap: 0.8rem;
     margin-bottom: 2rem;
 }
@@ -1602,6 +1602,47 @@ body {
 }
 .op-page.active {
     display: block;
+}
+/* msk 托管控制台：iframe 自身为唯一滚动容器（滚轮事件不会透出 iframe，外层滚动方案下滚轮必然失效） */
+.op-agent-control {
+    display: flex;
+    flex-direction: column;
+    flex: 0 1 auto;
+    min-height: 0;
+    /* 期望高度；弹窗触及 max-height 时经 flex 链收缩，页区永不滚出多余滚动条 */
+    height: min(560px, calc(100vh - 24rem));
+}
+.op-agent-control > iframe {
+    width: 100%;
+    /* !important 覆盖宿主脚本写入的行内高度 */
+    height: 100% !important;
+    border: 0;
+    display: block;
+    border-radius: 0.8rem;
+    background: #2d2d2d;
+}
+.op-agent-control-loading,
+.op-agent-control-empty {
+    grid-column: 1 / -1;
+}
+.op-agent-control-empty {
+    min-height: 160px;
+}
+.op-agent-control-status {
+    border-left: 0.35rem solid #e6a15a;
+    border-radius: 0.6rem;
+    background: #302722;
+    color: #f2ede7;
+    padding: 0.8rem 1rem;
+    margin-bottom: 1rem;
+}
+/* 控制台导航定位到消息时的高亮 */
+.msg-highlight {
+    animation: msg-highlight-fade 1.8s ease-out;
+}
+@keyframes msg-highlight-fade {
+    0% { background: rgba(230, 161, 90, 0.32); }
+    100% { background: transparent; }
 }
 .op-section {
     margin-bottom: 2rem;
@@ -2682,7 +2723,7 @@ body {
 }
 
 .op-panel {
-    height: min(720px, calc(100vh - 6rem));
+    max-height: min(720px, calc(100vh - 6rem));
     min-height: 0;
     overflow: hidden;
     display: flex;
@@ -2695,4 +2736,15 @@ body {
     overflow-x: hidden;
     overflow-y: auto;
     padding-right: 0.4rem;
+}
+
+.op-panel > .op-title,
+.op-panel > .op-subnav {
+    flex: none;
+}
+
+.op-panel > .op-page[data-op-page="agent-control"].active {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
 }

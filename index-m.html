@@ -6,13 +6,14 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <title>Aliya</title>
     <link rel="stylesheet" href="css/base.css">
-    <link rel="stylesheet" href="css/index-m.css?v=20260730-01">
+    <link rel="stylesheet" href="css/index-m.css?v=20260918-03">
     <link rel="stylesheet" href="css/loading-m.css?v=20260722-01">
 
 
     <script src="js/loading-m.js?v=20260722-01" defer></script>
     <script src="js/message-renderer.js" defer></script>
-    <script src="js/index-m.js?v=20260731-02" defer></script>
+    <script src="js/config.js?v=20260915-02" defer></script>
+    <script src="js/index-m.js?v=20260918-06" defer></script>
 
 
     <!-- 音乐引用 -->
@@ -296,155 +297,16 @@
                 <button type="button" class="op-subnav-btn" data-op-target="draw">生图</button>
                 <button type="button" class="op-subnav-btn" data-op-target="proactive">主动消息</button>
                 <button type="button" class="op-subnav-btn" data-op-target="memory">记忆</button>
+                <button type="button" class="op-subnav-btn" data-op-target="worldbook">世界书</button>
                 <button type="button" class="op-subnav-btn" data-op-target="rules">规则</button>
                 <button type="button" class="op-subnav-btn" data-op-target="style">文风</button>
             </div>
 
-            <div class="op-page" data-op-page="model">
+            <!-- msk 托管控制台：模型/生图/主动消息/记忆/世界书/规则/文风 面板由 embed 提供 -->
+            <div class="op-page" data-op-page="agent-control">
                 <div class="op-section">
-                    <label class="op-label">对话模型</label>
-                    <div class="op-model-config">
-                        <div class="op-model-hero">
-                            <span class="op-hero-item">
-                                <span class="op-hero-kicker">当前模型</span>
-                                <span class="op-hero-value" id="opAgentModelCurrent">-</span>
-                            </span>
-                            <span class="op-hero-item" id="opAgentCreditWrap" hidden>
-                                <span class="op-hero-kicker">余额</span>
-                                <span class="op-hero-value" id="opAgentCreditBalance">-</span>
-                            </span>
-                            <span class="op-hero-item" id="opAgentCostWrap" hidden>
-                                <span class="op-hero-kicker">预计费用</span>
-                                <span class="op-hero-value" id="opAgentExpectedCost">-</span>
-                            </span>
-                        </div>
-                        <div class="op-choice-list op-agent-model-list" id="cfgAgentModel" role="group" aria-label="对话模型">
-                            <div class="op-image-loading">正在加载对话模型...</div>
-                        </div>
-                        <div class="op-vision-model" id="opVisionModelGroup" hidden>
-                            <span class="op-image-label">识图模型</span>
-                            <div class="op-vision-model-card">
-                                <select class="op-vision-model-select" id="cfgAgentVisionModel" aria-label="识图模型" disabled>
-                                    <option>正在加载识图模型...</option>
-                                </select>
-                                <span class="op-caption" id="opVisionModelCost">用于理解你发送的图片 · 识图费用：-</span>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <div class="op-page" data-op-page="draw">
-                <div class="op-section">
-                    <label class="op-label">生图配置</label>
-                    <div class="op-image-config">
-                        <div class="op-image-group">
-                            <span class="op-image-label">生图模型</span>
-                            <div class="op-choice-list op-model-list" id="cfgAgentImageModel" role="group" aria-label="生图模型">
-                                <div class="op-image-loading">正在加载模型...</div>
-                            </div>
-                        </div>
-                        <div class="op-image-group">
-                            <span class="op-image-label">默认尺寸</span>
-                            <div class="op-segmented" id="cfgImgSize" role="group" aria-label="默认尺寸">
-                                <button type="button" class="op-segment-btn active" data-value="landscape">横图</button>
-                                <button type="button" class="op-segment-btn" data-value="portrait">竖图</button>
-                            </div>
-                        </div>
-                        <div class="op-image-group">
-                            <span class="op-image-label">画师串</span>
-                            <div class="op-artist-grid" id="cfgImgArtistPresetId" role="group" aria-label="画师串">
-                                <div class="op-image-loading">正在加载画师串...</div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-             <div class="op-page" data-op-page="proactive">
-                <div class="op-section">
-                    <div class="op-proactive-hero">
-                        <div class="op-proactive-hero-icon">◌</div>
-                        <div>
-                            <div class="op-proactive-title">主动消息</div>
-                            <div class="op-proactive-caption">让 Aliya 在合适的时间主动联系你。</div>
-                        </div>
-                    </div>
-                </div>
-                <div class="op-proactive-notice" id="opProactiveNotice" hidden></div>
-                <div class="op-proactive-notice op-proactive-error" id="opProactiveLastError" hidden></div>
-                <div class="op-section op-proactive-settings">
-                    <label class="op-label">主动消息设置</label>
-                    <label class="op-proactive-switch-card">
-                        <input type="checkbox" id="opRandomProactiveToggle">
-                        <span class="op-proactive-switch-copy">
-                            <span class="op-proactive-switch-title">随机主动消息</span>
-                            <span class="op-proactive-switch-caption">会话静默 30 分钟后，按北京时间昼夜权重随机安排一次主动消息。</span>
-                        </span>
-                    </label>
-                    <label class="op-proactive-switch-card">
-                        <input type="checkbox" id="opScheduledProactiveToggle">
-                        <span class="op-proactive-switch-copy">
-                            <span class="op-proactive-switch-title">定时主动消息</span>
-                            <span class="op-proactive-switch-caption">Aliya 可自主创建、调整或取消最多 5 个定时计划。</span>
-                        </span>
-                    </label>
-                </div>
-                <div class="op-section">
-                    <div class="op-proactive-list-head">
-                        <div>
-                            <label class="op-label">当前定时计划</label>
-                            <div class="op-caption">计划由 Aliya 维护，你可以暂停、恢复或删除。</div>
-                        </div>
-                        <button type="button" class="op-icon-btn" id="opProactiveRefreshBtn" title="刷新计划" aria-label="刷新计划">↻</button>
-                    </div>
-                    <div class="op-proactive-list" id="opProactiveScheduleList"></div>
-                </div>
-            </div>
-
-            <div class="op-page" data-op-page="memory">
-                <div class="op-section op-memory-guidance">
-                    <label class="op-label">记忆功能</label>
-                    <div class="op-memory-warning" role="note">
-                        <strong>请务必开启记忆功能</strong>
-                        <p>若未开启，长会话中可能出现遗忘早期内容、用户偏好或重要约定等情况。</p>
-                    </div>
-                    <ol class="op-memory-steps">
-                        <li>打开当前会话的 Misskey 官方页面。</li>
-                        <li>进入“记忆”子页面，选择需要的长期记忆模式。</li>
-                        <li>启用长期记忆并保存设置。</li>
-                    </ol>
-                    <a id="opMemorySettingsLink" class="op-btn op-btn-update op-memory-link"
-                       href="https://misskey.liminalselves.top/agents" target="_blank" rel="noopener noreferrer">
-                        前往 Misskey 设置记忆
-                    </a>
-                </div>
-            </div>
-
-            <div class="op-page" data-op-page="rules">
-                <div class="op-section">
-                    <label class="op-label">角色规则</label>
-                    <div class="op-rule-summary" id="opRuleSummary" hidden></div>
-                    <div class="op-rule-list" id="opRuleList"></div>
-                    <div class="op-caption">规则内容由角色作者设定，此处仅显示名称与简介。开关状态即时生效，下一轮对话将使用更新后的规则。</div>
-                </div>
-            </div>
-
-            <div class="op-page" data-op-page="style">
-                <div class="op-section">
-                    <label class="op-label">文风选择</label>
-                    <div class="op-style-config">
-                        <div class="op-model-hero op-style-hero">
-                            <span class="op-hero-item">
-                                <span class="op-hero-kicker">当前文风</span>
-                                <span class="op-hero-value" id="opStyleCurrent">-</span>
-                            </span>
-                        </div>
-                        <div class="op-choice-list op-style-list" id="cfgStyle" role="group" aria-label="文风">
-                            <div class="op-image-loading">正在加载文风...</div>
-                        </div>
-                    </div>
-                    <div class="op-caption">选择文风后将自动订阅并立即生效。</div>
+                    <div class="op-agent-control-status" id="opAgentControlStatus" hidden></div>
+                    <div class="op-agent-control" id="opAgentControlHost"></div>
                 </div>
             </div>
 
