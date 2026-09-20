@@ -426,8 +426,133 @@ document.addEventListener("DOMContentLoaded", function (event) {
     document.addEventListener("visibilitychange", syncVitalsTimer);
     syncVitalsTimer();
     window.setRange = function(type) { currentRange = ranges[type]; updateDisplay(); }
-    
-    let isCooling = false; 
+
+    // —— 氧气柱 O2 控制模块 ——
+    var O2_DEPLETION_RATE_MS = 100 / (50 * 3600 * 1000);//数据来自童年是个风筝
+    var O2_REFILL_RATE_MS = 1 / 1000;
+    var O2_AUTO_THRESHOLD = 10;//数据来自miqi
+    var O2_STORAGE_KEY = "aliya_o2_state";
+    var o2Bar = document.querySelector('.chart .o2');
+    var o2TopBar = document.querySelector('.sb-fill.o2');
+    var eogInput = document.getElementById('eogbutton');
+    var o2Cache = null;
+    var o2Timer = null;
+    var o2LastSaveTime = 0;
+
+    function loadO2State() {
+        if (o2Cache) return o2Cache;
+        try {
+            var raw = localStorage.getItem(O2_STORAGE_KEY);
+            if (!raw) return null;
+            var s = JSON.parse(raw);
+            if (typeof s.o2 !== 'number' || typeof s.timestamp !== 'number') return null;
+            o2Cache = { o2: s.o2, timestamp: s.timestamp, eogOn: !!s.eogOn };
+            return o2Cache;
+        } catch (e) { return null; }
+    }
+
+    function saveO2State(o2, eogOn) {
+        o2Cache = { o2: o2, timestamp: Date.now(), eogOn: eogOn };
+        try {
+            localStorage.setItem(O2_STORAGE_KEY, JSON.stringify(o2Cache));
+            o2LastSaveTime = Date.now();
+        } catch (e) {}
+    }
+
+    function calculateO2(storedO2, storedTimestamp, storedEogOn, now) {
+        var o2 = storedO2;
+        var eogOn = storedEogOn;
+        var remaining = Math.max(0, now - storedTimestamp);
+        var iter = 0;
+        while (remaining > 0 && iter < 50) {
+            iter++;
+            if (eogOn) {
+                if (o2 >= 100) { o2 = 100; eogOn = false; remaining = 0; break; }
+                var msToFull = (100 - o2) / O2_REFILL_RATE_MS;
+                if (msToFull <= remaining) { o2 = 100; remaining -= msToFull; eogOn = false; }
+                else { o2 += remaining * O2_REFILL_RATE_MS; remaining = 0; }
+            } else {
+                if (o2 <= O2_AUTO_THRESHOLD) { eogOn = true; continue; }
+                var msToThreshold = (o2 - O2_AUTO_THRESHOLD) / O2_DEPLETION_RATE_MS;
+                if (msToThreshold <= remaining) { o2 = O2_AUTO_THRESHOLD; remaining -= msToThreshold; eogOn = true; }
+                else { o2 -= remaining * O2_DEPLETION_RATE_MS; remaining = 0; }
+            }
+        }
+        o2 = Math.max(0, Math.min(100, o2));
+        return { o2: o2, eogOn: eogOn };
+    }
+
+    function getO2CurrentState() {
+        var s = loadO2State();
+        if (!s) return null;
+        return calculateO2(s.o2, s.timestamp, s.eogOn, Date.now());
+    }
+
+    function setEogVisual(checked) {
+        if (!eogInput) return;
+        eogInput.checked = checked;
+        var bg = eogInput.closest('.bg');
+        if (!bg) return;
+        var onLabel = bg.querySelector('.on-label');
+        var offLabel = bg.querySelector('.off-label');
+        if (onLabel) onLabel.classList.toggle('active', !checked);
+        if (offLabel) offLabel.classList.toggle('active', checked);
+    }
+
+    function applyO2Visual(o2, instant) {
+        var pct = o2 + '%';
+        if (o2Bar) {
+            if (instant) {
+                o2Bar.style.transition = 'none';
+                o2Bar.style.height = pct;
+                void o2Bar.offsetHeight;
+                o2Bar.style.transition = '';
+            } else {
+                o2Bar.style.height = pct;
+            }
+        }
+        if (o2TopBar) o2TopBar.style.width = pct;
+    }
+
+    function tickO2() {
+        var s = loadO2State();
+        if (!s) { s = { o2: 100, timestamp: Date.now(), eogOn: false }; saveO2State(s.o2, s.eogOn); }
+        var now = Date.now();
+        var result = calculateO2(s.o2, s.timestamp, s.eogOn, now);
+        applyO2Visual(result.o2, false);
+        var currentEog = eogInput ? eogInput.checked : false;
+        if (result.eogOn !== currentEog) {
+            setEogVisual(result.eogOn);
+            saveO2State(result.o2, result.eogOn);
+        } else if (now - o2LastSaveTime > 30000) {
+            saveO2State(result.o2, result.eogOn);
+        }
+    }
+
+    function startO2Loop() {
+        if (o2Timer) clearInterval(o2Timer);
+        var s = loadO2State();
+        if (!s) { saveO2State(100, false); s = o2Cache; }
+        var result = calculateO2(s.o2, s.timestamp, s.eogOn, Date.now());
+        applyO2Visual(result.o2, true);
+        setEogVisual(result.eogOn);
+        if (result.eogOn !== s.eogOn) saveO2State(result.o2, result.eogOn);
+        o2Timer = setInterval(tickO2, 1000);
+    }
+
+    function stopO2Loop() {
+        if (o2Timer) { clearInterval(o2Timer); o2Timer = null; }
+        var st = getO2CurrentState();
+        if (st) saveO2State(st.o2, st.eogOn);
+    }
+
+    document.addEventListener("visibilitychange", function () {
+        if (document.hidden) stopO2Loop();
+        else startO2Loop();
+    });
+    startO2Loop();
+
+    let isCooling = false;
     document.querySelectorAll('.toggle-input').forEach(input => {
         input.addEventListener('change', function () {
             if (isCooling) return;
@@ -455,6 +580,15 @@ document.addEventListener("DOMContentLoaded", function (event) {
         if (hrm) hrm.style.opacity = opacity;
         if (topHeart) topHeart.style.opacity = opacity;
     });
+
+    if (eogInput) {
+        eogInput.addEventListener('change', function () {
+            var st = getO2CurrentState();
+            var o2 = st ? st.o2 : 100;
+            saveO2State(o2, this.checked);
+            applyO2Visual(o2, false);
+        });
+    }
 
     const liderContainer = document.querySelector('.slider-container');
     liderContainer.addEventListener('mousedown', e => { e.preventDefault() })
@@ -942,6 +1076,26 @@ document.addEventListener("DOMContentLoaded", function (event) {
     var earliestMsgId = null;
     var recentlySentSet = {}; 
     var recentlyReceivedSet = {};
+    // 按 Misskey 消息 ID 防重：内容防重在 assistantText 与时间线 content 文本不完全一致时会失效。
+    var receivedMsgIds = {};
+    function markReceivedId(id) {
+        if (!id) return;
+        receivedMsgIds[id] = true;
+        setTimeout(function() { delete receivedMsgIds[id]; }, 300000);
+    }
+    // 检查内容是否已被防重标记覆盖。分段输出时 sendMessage 标记的是合并文本，
+    // poll 拉到的是分段文本，除了精确匹配还需检查分段文本是否是某个已标记文本的子串。
+    function isRecentlyReceived(content) {
+        if (!content) return false;
+        if (recentlyReceivedSet[content]) return true;
+        var trimmed = String(content).trim();
+        if (trimmed && recentlyReceivedSet[trimmed]) return true;
+        for (var key in recentlyReceivedSet) {
+            if (!key) continue;
+            if (trimmed && key.indexOf(trimmed) !== -1) return true;
+        }
+        return false;
+    }
     var isAtBottomFlag = true;
     var isTimelineLoading = false;
     var timelineLoadPromise = null;
@@ -1809,7 +1963,11 @@ document.addEventListener("DOMContentLoaded", function (event) {
                         delete recentlySentSet[m.content];
                         continue;
                     }
-                    if (mRole === "aliya" && recentlyReceivedSet[m.content]) {
+                    if (mRole === "aliya" && m.id && receivedMsgIds[m.id]) {
+                        lastMsgId = m.id;
+                        continue;
+                    }
+                    if (mRole === "aliya" && isRecentlyReceived(m.content)) {
                         lastMsgId = m.id;
                         delete recentlyReceivedSet[m.content];
                         continue;
@@ -1821,6 +1979,8 @@ document.addEventListener("DOMContentLoaded", function (event) {
                     }
                     // 走到这里说明这是真实的新消息
                     if (mRole === "aliya") {
+                        // 关键：在 await 图片处理之前就标记消息 id，避免 await 期间 sendMessage 重复渲染。
+                        markReceivedId(m.id);
                         var processed = await processDrawingInstruction(m.content, m.id);
                         var hrResult = processHeartRateInstruction(processed.text);
                         if (!hrResult.matched) {
@@ -1835,7 +1995,7 @@ document.addEventListener("DOMContentLoaded", function (event) {
                         // 用 IIFE 捕获本条消息内容，避免 var 循环变量被 setTimeout 闭包引用到最后一条消息。
                         (function (contentKey) {
                             recentlyReceivedSet[contentKey] = true;
-                            setTimeout(function() { delete recentlyReceivedSet[contentKey]; }, 10000);
+                            setTimeout(function() { delete recentlyReceivedSet[contentKey]; }, 300000);
                         })(m.content);
                         appendedAssistant = true;
                     } else if (mRole === "player") {
@@ -1856,13 +2016,19 @@ document.addEventListener("DOMContentLoaded", function (event) {
                         delete recentlySentSet[msg.content];
                         continue;
                     }
-                    if (msgRole === "aliya" && recentlyReceivedSet[msg.content]) {
+                    if (msgRole === "aliya" && msg.id && receivedMsgIds[msg.id]) {
+                        if (msg.id > lastMsgId) lastMsgId = msg.id;
+                        continue;
+                    }
+                    if (msgRole === "aliya" && isRecentlyReceived(msg.content)) {
                         if (msg.id > lastMsgId) lastMsgId = msg.id;
                         delete recentlyReceivedSet[msg.content];
                         continue;
                     }
-                    
+
                     if (msgRole === "aliya") {
+                        // 关键：在 await 图片处理之前就标记消息 id，避免 await 期间 sendMessage 重复渲染。
+                        markReceivedId(msg.id);
                         var processed = await processDrawingInstruction(msg.content, msg.msk_msg_id);
                         var hrResult = processHeartRateInstruction(processed.text);
                         if (!hrResult.matched) {
@@ -1877,7 +2043,7 @@ document.addEventListener("DOMContentLoaded", function (event) {
                         }, msg.msk_msg_id);
                         (function (contentKey) {
                             recentlyReceivedSet[contentKey] = true;
-                            setTimeout(function() { delete recentlyReceivedSet[contentKey]; }, 10000);
+                            setTimeout(function() { delete recentlyReceivedSet[contentKey]; }, 300000);
                         })(msg.content);
                     } else {
                         appendMessage(msgRole, msg.content, msg.createdAt || msg.timestamp || null, timelineAttachmentImageUrls(msg.file));
@@ -1947,6 +2113,11 @@ document.addEventListener("DOMContentLoaded", function (event) {
             if (data.status === "success" && data.assistant_message !== undefined) {
                 var rawText = data.assistant_message;
                 var msgId = data.assistant_message_id;
+                // 关键：在 await 图片处理之前就标记消息 id。
+                // processDrawingInstruction 内部会 await fetchPlaceholderImage（网络请求，耗时），
+                // 若等到 await 完成后才标记 id，则 await 期间 poll 拉到同一条消息时 id 尚未标记，
+                // 两条路径都在"检查通过但尚未标记"的窗口期内，导致带生图的消息被重复渲染。
+                markReceivedId(msgId);
                 // 恢复稳定版逻辑：不再依赖 timelineSnapshotMessageIds 这种复杂的快照比对。
                 // 只要后端返回了，我们就直接渲染。如果 poll 抢先拉到了，poll 里的 recentlyReceivedSet 会跳过它。
                 var processed = await processDrawingInstruction(rawText, msgId);
@@ -1971,11 +2142,23 @@ document.addEventListener("DOMContentLoaded", function (event) {
                     assistantMeta.proactiveScheduleActionTypes,
                     assistantMeta.proactiveScheduleControlFailed
                 );
+                // 渲染检查只看 content（poll 渲染时会标记 content），不看 id。
+                // id 是本条 sendMessage 自己提前标记的（用于挡 poll），若此处检查 id 会把自己的渲染也挡掉。
                 if (!recentlyReceivedSet[rawText]) {
                     renderAliyaMessage(hrResult.text, processed.images, false, assistantMeta, msgId);
                 }
-                recentlyReceivedSet[rawText] = true;
-                setTimeout(function () { delete recentlyReceivedSet[rawText]; }, 10000);
+                // 防重标记：分段输出开启时，Misskey 时间线会把一条回复拆成多条独立消息，
+                // 而 /api/chat 同步返回的 rawText 是合并文本。两者 content 对不上会导致 poll 重复渲染。
+                // 因此除了标记合并文本，还要按换行拆分标记每个分段，确保 poll 拉到分段消息时能命中防重。
+                var dedupKeys = [rawText];
+                rawText.split(/\n+/).forEach(function(seg) {
+                    var trimmed = seg.trim();
+                    if (trimmed && trimmed !== rawText) dedupKeys.push(trimmed);
+                });
+                dedupKeys.forEach(function(key) {
+                    recentlyReceivedSet[key] = true;
+                    setTimeout(function () { delete recentlyReceivedSet[key]; }, 300000);
+                });
             } else if (data.status === "error") {
                 var errorReply = data.reply || data.error || "通信故障，请稍后再试";
                 var errorTimestamp = new Date().toISOString();
