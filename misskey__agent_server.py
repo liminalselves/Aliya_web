@@ -61,6 +61,9 @@ MAX_REQUEST_BYTES = 16 * 1024 * 1024
 MAX_MESSAGE_CHARS = 16000
 METADATA_CACHE_MAX_ENTRIES = 256
 TIMELINE_POLL_CACHE_TTL = 25
+EMOJI_CACHE_TTL = 3600
+# 角色表情库可被创作者编辑，TTL 取短一些（60s）保证失效 key 及时反映
+STICKER_CONTEXT_CACHE_TTL = 60
 
 app = Flask(__name__)
 app.config["MAX_CONTENT_LENGTH"] = MAX_REQUEST_BYTES
@@ -637,6 +640,97 @@ def get_messages():
         msgs = [_public_message(m) for m in _messages_for_token(token)]
     return jsonify({"messages": msgs})
 
+@app.route("/api/emojis", methods=["GET"])
+def get_emojis():
+    """实例自定义表情目录（公开数据，无需鉴权），供渲染器解析 :name: 短码。"""
+    def _load():
+        data = _misskey_api_post(None, "emojis", {}, timeout=15)
+        emojis = data.get("emojis") if isinstance(data, dict) else None
+        if not isinstance(emojis, list):
+            raise ValueError("emojis 响应格式异常")
+        mapping = {}
+        for e in emojis:
+            if isinstance(e, dict):
+                name = e.get("name")
+                url = e.get("url") or e.get("publicUrl") or e.get("originalUrl")
+                if name and url:
+                    mapping[name] = url
+        return mapping
+
+    try:
+        mapping = _cached_metadata("emojis", None, EMOJI_CACHE_TTL, _load)
+    except Exception as e:
+        logging.warning("获取表情目录失败：%s", e)
+        return jsonify({"error": "获取表情目录失败"}), 502
+    return jsonify({"emojiMap": mapping})
+
+
+def _sticker_file_entry(file_info):
+    """从 DriveFile pack 中提取贴纸渲染所需字段；动图须用原图保留动画。"""
+    if not isinstance(file_info, dict):
+        return None
+    url = file_info.get("url")
+    if not url:
+        return None
+    return {
+        "url": url,
+        "thumbnailUrl": file_info.get("thumbnailUrl"),
+        "type": file_info.get("type"),
+    }
+
+
+@app.route("/api/sticker_context", methods=["GET", "POST"])
+def get_sticker_context():
+    """表情包渲染上下文：实例开关（/api/meta）+ 当前会话角色表情包 key→文件映射。"""
+    data = request.get_json(silent=True) or {}
+    token = _token_from_request(data)
+    if not token:
+        return jsonify({"error": "缺少鉴权 token"}), 401
+    try:
+        session_id = _current_or_requested_session_id(data, token)
+    except PermissionError as e:
+        return jsonify({"error": str(e)}), 403
+    except requests.exceptions.HTTPError as e:
+        status = e.response.status_code if e.response is not None else 500
+        return jsonify({"error": f"获取会话失败: {status}"}), status
+    except Exception as e:
+        logging.error(f"表情包上下文解析会话失败: {e}")
+        return jsonify({"error": f"解析会话失败: {e}"}), 500
+
+    def _load():
+        try:
+            meta = _cached_metadata("agent_models", None, 300, _load_meta_json)
+        except Exception as e:
+            logging.warning(f"获取 meta 失败，表情包开关按关闭处理: {e}")
+            meta = {}
+        session = _show_session_data(token, session_id)
+        stickers = {}
+        raw_stickers = session.get("characterStickers") if isinstance(session, dict) else None
+        for item in (raw_stickers or []):
+            if not isinstance(item, dict):
+                continue
+            entry = _sticker_file_entry(item.get("file"))
+            key = item.get("key")
+            if key and entry:
+                stickers[str(key)] = entry
+        return {
+            "enabled": isinstance(meta, dict) and meta.get("agentStickerEnabled") is True,
+            "stickers": stickers,
+        }
+
+    try:
+        context = _cached_metadata(f"sticker_ctx:{session_id}", token, STICKER_CONTEXT_CACHE_TTL, _load)
+    except PermissionError as e:
+        return jsonify({"error": str(e)}), 403
+    except requests.exceptions.HTTPError as e:
+        status = e.response.status_code if e.response is not None else 500
+        logging.error(f"获取表情包上下文失败 {status}")
+        return jsonify({"error": f"获取表情包上下文失败: {status}"}), status
+    except requests.exceptions.RequestException as e:
+        logging.error(f"获取表情包上下文请求异常: {e}")
+        return jsonify({"error": str(e)}), 500
+    return jsonify(context)
+
 @app.route("/api/poll", methods=["GET", "POST"])
 def poll():
     """轮询 MSK 权威时间线快照，用于同步主动消息、编辑与回溯删除。"""
@@ -837,7 +931,9 @@ def conversation():
 
 def _misskey_api_post(token, endpoint, payload=None, timeout=30):
     body = dict(payload or {})
-    body["i"] = token
+    # token 为空表示匿名调用（如公开的 emojis 端点），不注入 i 字段。
+    if token:
+        body["i"] = token
     url = f"{MSK_ORIGIN}/api/{endpoint}"
     resp = _http_post(url, json=body, headers=_misskey_headers(), timeout=timeout)
     resp.raise_for_status()
@@ -1031,15 +1127,16 @@ def model_success_rates(token):
         logging.warning(f"获取模型成功率请求异常: {e}")
         return jsonify({"windowMs": 60 * 60 * 1000, "rates": []}), 200
 
+def _load_meta_json():
+    url = f"{MSK_ORIGIN}/api/meta"
+    resp = _http_post(url, json={"detail": False}, headers=_misskey_headers(), timeout=30)
+    resp.raise_for_status()
+    return resp.json()
+
+
 def list_agent_models(token):
     try:
-        def load_agent_models():
-            url = f"{MSK_ORIGIN}/api/meta"
-            resp = _http_post(url, json={"detail": False}, headers=_misskey_headers(), timeout=30)
-            resp.raise_for_status()
-            return resp.json()
-
-        data = _cached_metadata("agent_models", None, 300, load_agent_models)
+        data = _cached_metadata("agent_models", None, 300, _load_meta_json)
         models = data.get("agentModels") if isinstance(data, dict) else []
         default_model_id = data.get("agentDefaultModelId") if isinstance(data, dict) else None
         return jsonify({

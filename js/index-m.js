@@ -1177,161 +1177,13 @@ document.addEventListener("DOMContentLoaded", function (event) {
         localStorage.setItem(segConfigStorageKey(), JSON.stringify(segConfig));
     }
 
-    function pushSegment(segments, lines) {
-        var text = lines.join("\n").trim();
-        if (text) segments.push(text);
-    }
-
-    function isMarkdownSeparator(line) {
-        return /^\s{0,3}(?:(?:-{3,})|(?:_{3,})|(?:\*{3,}))\s*$/.test(line);
-    }
-
-    function isTableDelimiter(line) {
-        return /^\s*\|?(?:\s*:?-{3,}:?\s*\|)+\s*:?-{3,}:?\s*\|?\s*$/.test(line);
-    }
-
-    function isListItem(line) {
-        return /^\s*(?:[-+*]|\d+[.)])\s+/.test(line);
-    }
-
-    function isListContinuation(line) {
-        return /^\s{2,}\S/.test(line);
-    }
-
-    function updateHtmlStack(line, stack) {
-        var voidTags = {
-            area: true, base: true, br: true, col: true, embed: true,
-            hr: true, img: true, input: true, link: true, meta: true,
-            param: true, source: true, track: true, wbr: true
-        };
-        var tagRegex = /<!--[\s\S]*?-->|<\/?([A-Za-z][\w:-]*)(?:\s[^<>]*?)?\/?>/g;
-        var sawHtml = false;
-        var match;
-        while ((match = tagRegex.exec(line)) !== null) {
-            if (!match[1]) {
-                sawHtml = true;
-                continue;
-            }
-            sawHtml = true;
-            var raw = match[0];
-            var tag = match[1].toLowerCase();
-            if (voidTags[tag] || /\/\s*>$/.test(raw)) continue;
-            if (/^<\//.test(raw)) {
-                for (var i = stack.length - 1; i >= 0; i--) {
-                    if (stack[i] === tag) {
-                        stack.splice(i);
-                        break;
-                    }
-                }
-            } else {
-                stack.push(tag);
-            }
-        }
-        return sawHtml;
-    }
-
+    // 分段器与延迟计算已抽到 message-renderer.js 公共版（含表情包气泡切分），双端共用
     function splitAssistantMessageIntoSegments(source) {
-        if (source === null || source === undefined) return [];
-        var original = String(source);
-        var normalized = original.replace(/\r\n?/g, "\n");
-        var lines = normalized.split("\n");
-        var segments = [];
-        var i = 0;
-
-        while (i < lines.length) {
-            var line = lines[i];
-            if (!line.trim() || isMarkdownSeparator(line)) {
-                i++;
-                continue;
-            }
-
-            var fenceStart = line.match(/^\s*(`{3,}|~{3,})/);
-            if (fenceStart) {
-                var fence = fenceStart[1];
-                var fenceChar = fence.charAt(0);
-                var fenceEndRegex = new RegExp("^\\s*" + fenceChar + "{" + fence.length + ",}\\s*$");
-                var fenceLines = [line];
-                i++;
-                while (i < lines.length) {
-                    fenceLines.push(lines[i]);
-                    if (fenceEndRegex.test(lines[i])) {
-                        i++;
-                        break;
-                    }
-                    i++;
-                }
-                pushSegment(segments, fenceLines);
-                continue;
-            }
-
-            if (line.indexOf("|") !== -1 && i + 1 < lines.length && isTableDelimiter(lines[i + 1])) {
-                var tableLines = [line, lines[i + 1]];
-                i += 2;
-                while (i < lines.length && lines[i].trim() && lines[i].indexOf("|") !== -1) {
-                    tableLines.push(lines[i]);
-                    i++;
-                }
-                pushSegment(segments, tableLines);
-                continue;
-            }
-
-            if (isListItem(line)) {
-                var listLines = [line];
-                i++;
-                while (i < lines.length && (isListItem(lines[i]) || isListContinuation(lines[i]))) {
-                    listLines.push(lines[i]);
-                    i++;
-                }
-                pushSegment(segments, listLines);
-                continue;
-            }
-
-            if (/^\s*>/.test(line)) {
-                var quoteLines = [line];
-                i++;
-                while (i < lines.length && /^\s*>/.test(lines[i])) {
-                    quoteLines.push(lines[i]);
-                    i++;
-                }
-                pushSegment(segments, quoteLines);
-                continue;
-            }
-
-            if (line.indexOf("[[agent_draw") !== -1) {
-                var toolLines = [line];
-                i++;
-                while (toolLines.join("\n").indexOf("]]") === -1 && i < lines.length) {
-                    toolLines.push(lines[i]);
-                    i++;
-                }
-                pushSegment(segments, toolLines);
-                continue;
-            }
-
-            var htmlStack = [];
-            if (updateHtmlStack(line, htmlStack)) {
-                var htmlLines = [line];
-                i++;
-                while (htmlStack.length > 0 && i < lines.length) {
-                    htmlLines.push(lines[i]);
-                    updateHtmlStack(lines[i], htmlStack);
-                    i++;
-                }
-                pushSegment(segments, htmlLines);
-                continue;
-            }
-
-            pushSegment(segments, [line]);
-            i++;
-        }
-
-        if (segments.length === 0 && original.trim()) return [original.trim()];
-        return segments;
+        return window.AliyaMessageRenderer.splitAssistantMessageIntoSegments(source);
     }
 
     function agentSegmentDelayMs(segment) {
-        var visibleChars = String(segment || "").replace(/<[^>]*>|\s+/g, "").length;
-        return Math.max(1000, Math.min(3000, 1000 + visibleChars * 20));
+        return window.AliyaMessageRenderer.agentSegmentDelayMs(segment);
     }
 
     function clearSegmentPlaybackTimers() {
@@ -1398,11 +1250,11 @@ document.addEventListener("DOMContentLoaded", function (event) {
         }
     }
 
-    function appendMessageContent(li, content) {
+    function appendMessageContent(li, content, role) {
         var body = document.createElement("div");
         body.className = "message-rich-content";
         if (window.AliyaMessageRenderer && typeof window.AliyaMessageRenderer.renderInto === "function") {
-            window.AliyaMessageRenderer.renderInto(body, content);
+            window.AliyaMessageRenderer.renderInto(body, content, { role: role || null });
         } else {
             body.textContent = content;
         }
@@ -1532,7 +1384,7 @@ document.addEventListener("DOMContentLoaded", function (event) {
             var li = document.createElement("li");
             li.className = role + (suppressEnterAnimation ? "" : " msg-enter");
             if (msgId) li.setAttribute("data-message-id", msgId);
-            appendMessageContent(li, String(content));
+            appendMessageContent(li, String(content), role);
             aliyaText.appendChild(li);
         }
         if (images && images.length > 0) {
@@ -1754,6 +1606,32 @@ document.addEventListener("DOMContentLoaded", function (event) {
     */
 
     // 初始化拉取消息（通过 timeline 端点，type=new）
+    // 拉取表情包渲染上下文（实例开关 + 角色表情包映射）。
+    // 失败退回 pending 态（不阻断时间线加载，渲染器保持旧行为），先于消息渲染就绪。
+    var stickerContextRevision = 0;
+    async function loadStickerContext() {
+        if (!(window.AliyaMessageRenderer && typeof window.AliyaMessageRenderer.setStickerContext === "function")) return;
+        var revision = ++stickerContextRevision;
+        try {
+            var res = await fetch(API_BASE + "/api/sticker_context", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: makeBody({ session_id: currentSessionId })
+            });
+            var data = await res.json();
+            if (await guardAuthResponse(res, data)) return;
+            if (revision !== stickerContextRevision) return;
+            if (!res.ok || data.error) throw new Error(data.error || "加载表情包上下文失败");
+            window.AliyaMessageRenderer.setStickerContext({
+                enabled: data.enabled === true,
+                stickers: data.stickers || {}
+            });
+        } catch (err) {
+            console.log("加载表情包上下文失败：", err);
+            if (revision === stickerContextRevision) window.AliyaMessageRenderer.setStickerContext(null);
+        }
+    }
+
     async function fetchInitialMessages() {
         if (timelineLoadPromise) return timelineLoadPromise;
         timelineLoadPromise = (async function() {
@@ -1761,6 +1639,7 @@ document.addEventListener("DOMContentLoaded", function (event) {
             isTimelineLoading = true;
             setChatLoading(true, "正在加载聊天记录...", "center");
             try {
+                await loadStickerContext();
                 var res = await fetch(API_BASE + "/api/conversation", {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
@@ -1889,7 +1768,7 @@ document.addEventListener("DOMContentLoaded", function (event) {
         if (content !== null && content !== undefined && String(content) !== "") {
             var li = document.createElement("li");
             li.className = role;
-            appendMessageContent(li, String(content));
+            appendMessageContent(li, String(content), role);
             fragment.appendChild(li);
         }
         if (images && images.length > 0) {

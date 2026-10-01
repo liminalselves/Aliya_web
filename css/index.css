@@ -422,6 +422,40 @@ body {
 .mfm-emoji {
     color: #b9f241;
 }
+.mfm-emoji-img {
+    height: 1.25em;
+    width: auto;
+    max-width: 8em;
+    vertical-align: -0.25em;
+    display: inline-block;
+    object-fit: contain;
+}
+/* 贴纸：#aliyaText 前缀压过 #aliyaText img 的全局圆角等规则，
+   让图片按自身尺寸呈现、气泡（fit-content）贴合贴纸实际大小 */
+#aliyaText img.mfm-sticker-img,
+.mfm-sticker-img {
+    width: auto;
+    height: auto;
+    max-width: 220px;
+    max-height: 220px;
+    display: inline-block;
+    object-fit: contain;
+    border-radius: 8px;
+    vertical-align: middle;
+    padding: 0;
+}
+.mfm-sticker-block {
+    display: block;
+}
+.mfm-sticker-missing {
+    display: inline-block;
+    padding: 0.2em 0.6em;
+    border: 1px dashed currentColor;
+    border-radius: 8px;
+    opacity: 0.65;
+    font-size: 0.9em;
+    vertical-align: middle;
+}
 @keyframes mfm-spin {
     to { transform: rotate(360deg); }
 }
