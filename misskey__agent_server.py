@@ -8,6 +8,7 @@ import hashlib
 import json
 import os
 import re
+import socket
 import sys
 import time
 import uuid
@@ -20,11 +21,55 @@ from urllib.parse import urlparse
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 
 #Misskey 配置
-# 【临时修复】实例源重新硬编码为官方生产站：gunicorn 部署下 sys.argv 属于启动器
-# （如 -c gunicorn.conf.py），此前按 argv[1] 解析实例源会得到 https://-c，
-# 导致所有上游请求 DNS 解析失败。切换本地开发实例时临时改动这里即可。
-MSK_ORIGIN = "https://misskey.liminalselves.top"
+# 实例源解析优先级：环境变量 ALIYA_MSK_ORIGIN → 本仓库入口脚本的第一个参数
+def _msk_origin_from_argv():
+    raw = os.environ.get("ALIYA_MSK_ORIGIN", "").strip().rstrip("/")
+    if not raw and len(sys.argv) > 1:
+        arg = sys.argv[1].strip().rstrip("/")
+        own_launch = (
+            not arg.startswith("-")
+            and os.path.basename(sys.argv[0] or "") in {"misskey_server.py", "misskey__agent_server.py"}
+        )
+        if "://" in arg or own_launch:
+            raw = arg
+    if not raw:
+        raw = "https://misskey.liminalselves.top"
+    if "://" not in raw:
+        # 本地实例补 http，其余按 https 处理
+        scheme = "http" if raw.startswith(("localhost", "127.0.0.1", "[::1]")) else "https"
+        raw = scheme + "://" + raw
+    host = urlparse(raw).hostname or ""
+    labels = host.split(".")
+    host_ok = (
+        host in ("localhost", "::1")
+        or host.endswith(".localhost")
+        or re.fullmatch(r"\d{1,3}(?:\.\d{1,3}){3}", host) is not None
+        or (
+            len(labels) >= 2
+            and all(
+                label and label[0] != "-" and label[-1] != "-"
+                and all(ch.isalnum() or ch == "-" for ch in label)
+                for label in labels
+            )
+        )
+    )
+    if not host_ok:
+        raise SystemExit(
+            f"MSK 实例源不合法：{raw!r}。"
+            "请检查环境变量 ALIYA_MSK_ORIGIN 或启动参数（gunicorn 部署请勿用命令行传实例源）。"
+        )
+    return raw
+
+MSK_ORIGIN = _msk_origin_from_argv()
 _msk_parsed = urlparse(MSK_ORIGIN)
+try:
+    socket.getaddrinfo(_msk_parsed.hostname or "", None)
+except socket.gaierror:
+    logging.warning(
+        "MSK 实例源主机 %s 当前无法解析，请检查 ALIYA_MSK_ORIGIN 或启动参数；"
+        "服务继续启动，但上游请求会失败。",
+        _msk_parsed.hostname,
+    )
 MSK_HOST = _msk_parsed.netloc
 MSK_WS_ORIGIN = ("wss" if _msk_parsed.scheme == "https" else "ws") + "://" + MSK_HOST
 # 非官方域名（如本地开发实例）上不存在 Aliya 角色：会话不按角色过滤（显示全部），
