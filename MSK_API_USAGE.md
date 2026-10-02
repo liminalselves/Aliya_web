@@ -357,6 +357,8 @@ wss://misskey.liminalselves.top/streaming?i=TOKEN
 
 ## 7. 本地 Flask 代理如何使用
 
+代理的 MSK 实例源当前**硬编码**为官方生产站 `https://misskey.liminalselves.top`（`misskey__agent_server.py` 顶部，临时修复：gunicorn 部署下命令行参数被启动器占用，按参数解析会得到无效域名）。切换本地开发实例时需临时修改该常量。
+
 前端默认请求当前站点的本地 API，即 `API_BASE + "/api/..."`。所有本地 POST 请求都自动附加：
 
 ~~~json
@@ -372,6 +374,7 @@ wss://misskey.liminalselves.top/streaming?i=TOKEN
 | `/api/chat` | POST | 发送聊天消息 |
 | `/api/poll` | GET/POST | 读取本地消息缓存中的新消息 |
 | `/api/messages` | GET | 读取当前 Token 的本地消息缓存 |
+| `/api/emojis` | GET | 实例自定义表情目录（`{emojiMap: {名称: 图片URL}}`，公开数据免鉴权，服务端缓存 1 小时），供消息渲染解析 `:表情名:` 短码 |
 | `/api/conversation` | POST | 统一处理会话、模型、文风、时间线和余额操作 |
 
 `/api/conversation` 支持：

@@ -20,20 +20,10 @@ from urllib.parse import urlparse
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 
 #Misskey 配置
-# 启动命令第一个参数指定 msk 实例源，不传时使用默认生产站：
-#   python misskey_server.py http://127.0.0.1:3000
-# 前端通过 /js/config.js 动态路由拿到该值，无需修改任何前端文件。
-def _msk_origin_from_argv():
-    raw = (sys.argv[1] if len(sys.argv) > 1 else "").strip().rstrip("/")
-    if not raw:
-        return "https://misskey.liminalselves.top"
-    if "://" not in raw:
-        # 本地实例补 http，其余按 https 处理
-        scheme = "http" if raw.startswith(("localhost", "127.0.0.1", "[::1]")) else "https"
-        raw = scheme + "://" + raw
-    return raw
-
-MSK_ORIGIN = _msk_origin_from_argv()
+# 【临时修复】实例源重新硬编码为官方生产站：gunicorn 部署下 sys.argv 属于启动器
+# （如 -c gunicorn.conf.py），此前按 argv[1] 解析实例源会得到 https://-c，
+# 导致所有上游请求 DNS 解析失败。切换本地开发实例时临时改动这里即可。
+MSK_ORIGIN = "https://misskey.liminalselves.top"
 _msk_parsed = urlparse(MSK_ORIGIN)
 MSK_HOST = _msk_parsed.netloc
 MSK_WS_ORIGIN = ("wss" if _msk_parsed.scheme == "https" else "ws") + "://" + MSK_HOST
