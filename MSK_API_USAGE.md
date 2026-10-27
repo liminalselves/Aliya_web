@@ -357,6 +357,14 @@ wss://misskey.liminalselves.top/streaming?i=TOKEN
 
 ## 7. 本地 Flask 代理如何使用
 
+代理的 MSK 实例源按以下优先级确定（`misskey__agent_server.py` 启动时解析）：
+
+1. 环境变量 `ALIYA_MSK_ORIGIN`（gunicorn/托管面板部署一律用这个，在面板「环境管理」里配置）；
+2. 直接运行时的第一个参数：`python misskey_server.py http://127.0.0.1:3000`（兼容不带协议的 `127.0.0.1:3000` 写法）；
+3. 默认生产站 `https://misskey.liminalselves.top`。
+
+安全约束：gunicorn 等启动器会占用命令行参数（曾把 `-c` 解析成实例源 `https://-c`，导致所有上游请求 DNS 失败），因此只有形如 URL 的参数、或经本仓库入口脚本直接启动时的参数才被采信。解析结果在启动时校验主机名合法性——不合法直接拒绝启动（错误信息见 `gunicorn_error.log`）；主机名合法但 DNS 解析失败时仅记录 WARNING、不阻塞启动。
+
 前端默认请求当前站点的本地 API，即 `API_BASE + "/api/..."`。所有本地 POST 请求都自动附加：
 
 ~~~json
@@ -372,6 +380,7 @@ wss://misskey.liminalselves.top/streaming?i=TOKEN
 | `/api/chat` | POST | 发送聊天消息 |
 | `/api/poll` | GET/POST | 读取本地消息缓存中的新消息 |
 | `/api/messages` | GET | 读取当前 Token 的本地消息缓存 |
+| `/api/emojis` | GET | 实例自定义表情目录（`{emojiMap: {名称: 图片URL}}`，公开数据免鉴权，服务端缓存 1 小时），供消息渲染解析 `:表情名:` 短码 |
 | `/api/conversation` | POST | 统一处理会话、模型、文风、时间线和余额操作 |
 
 `/api/conversation` 支持：
