@@ -4,6 +4,7 @@ from flask_cors import CORS
 import threading
 import asyncio
 import copy
+from collections import deque
 import hashlib
 import json
 import os
@@ -80,7 +81,6 @@ HTML_PAGES = {"index.html", "index-p.html", "index-m.html"}
 _metadata_cache = {}
 _metadata_cache_inflight = {}
 _metadata_cache_lock = threading.Lock()
-_http_local = threading.local()
 
 
 @app.errorhandler(413)
@@ -162,14 +162,21 @@ def _misskey_headers(extra=None):
     return headers
 
 
+def _build_http_session():
+    session = requests.Session()
+    adapter = HTTPAdapter(pool_connections=4, pool_maxsize=32, max_retries=0)
+    session.mount("https://", adapter)
+    session.mount("http://", adapter)
+    return session
+
+
+# Flask 的线程模型是每个请求一个新线程，线程级 Session 无法复用连接；
+# 共享一个进程级连接池，避免每次代理请求都重新做 TCP/TLS 握手。
+_http_session = _build_http_session()
+
+
 def _http_post(url, **kwargs):
-    session = getattr(_http_local, "session", None)
-    if session is None:
-        session = requests.Session()
-        adapter = HTTPAdapter(pool_connections=4, pool_maxsize=8, max_retries=0)
-        session.mount("https://", adapter)
-        _http_local.session = session
-    return session.post(url, **kwargs)
+    return _http_session.post(url, **kwargs)
 
 
 def _token_fingerprint(token):
@@ -400,10 +407,17 @@ def _resolve_aliya_character_ids(sessions):
 def _ensure_session_id(token, create_if_missing=True):
     """确保当前 token 对应账号有一个 Aliya 会话（按 token 串行，避免并发重复创建）。"""
     with _token_op_lock(token):
-        return _ensure_session_id_locked(token, create_if_missing)
+        return _ensure_session_locked(token, create_if_missing)[0]
 
 
-def _ensure_session_id_locked(token, create_if_missing=True):
+def _ensure_session(token):
+    """同 _ensure_session_id，但在已经拿到会话详情时一并返回，省去调用方再请求一次 sessions/show。"""
+    with _token_op_lock(token):
+        return _ensure_session_locked(token, True)
+
+
+def _ensure_session_locked(token, create_if_missing=True):
+    """返回 (session_id, session_data)；session_data 仅在本次已请求过 sessions/show 时非空。"""
     cached_session_id = _get_cached_session_id(token)
 
     if cached_session_id:
@@ -411,7 +425,7 @@ def _ensure_session_id_locked(token, create_if_missing=True):
             current_session = _show_session_data(token, cached_session_id)
             if _is_aliya_session(current_session):
                 _ensure_required_session_style(token, cached_session_id, current_session)
-                return cached_session_id
+                return cached_session_id, current_session
             logging.info(
                 f"当前会话角色不匹配，准备重新选择 Aliya 会话: "
                 f"{cached_session_id} characterId={_session_character_id(current_session)}"
@@ -433,16 +447,16 @@ def _ensure_session_id_locked(token, create_if_missing=True):
             _ensure_required_session_style(token, session_id, aliya_sessions[0])
             _set_cached_session_id(token, session_id)
             logging.info(f">>> 已自动切换到 Aliya 会话: {session_id}")
-            return session_id
+            return session_id, None
 
     if create_if_missing:
         data = _create_session_data(token)
         session_id = data["id"]
         _set_cached_session_id(token, session_id)
         logging.info(f">>> 已自动创建会话: {session_id}")
-        return session_id
+        return session_id, None
 
-    return None
+    return None, None
 
 
 def _safe_frontend_path(filename):
@@ -550,6 +564,7 @@ def _record_rate_limit(namespace, token):
     now = time.monotonic()
     key = (namespace, _token_fingerprint(token))
     with _rate_limit_lock:
+        _cleanup_rate_limit_locked(now)
         state = _rate_limit_state.get(key)
         if state and state["locked_until"] > now:
             # 已在锁内：按冷却决定是否再提示，避免刷屏。
@@ -586,7 +601,7 @@ def _cleanup_rate_limit_locked(now):
         _rate_limit_state.pop(key, None)
 
 
-messages_store = []
+messages_store = deque(maxlen=200)
 _msg_id_counter = 0
 _lock = threading.Lock()
 
@@ -612,9 +627,6 @@ def _add_message(role, content, msk_msg_id=None, token=None, metadata=None, sess
         if isinstance(metadata, dict):
             msg.update(metadata)
         messages_store.append(msg)
-        # 保留最近 200 条
-        if len(messages_store) > 200:
-            messages_store.pop(0)
     return msg
 
 
@@ -1206,18 +1218,8 @@ def list_usable(token):
     """获取可用文风列表"""
     url = f"{MSK_ORIGIN}/api/agents/styles/list-usable"
     payload = {"i": token}
-    headers = {
-        "Content-Type": "application/json",
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-        "Accept": "application/json, text/plain, */*",
-        "Origin": f"{MSK_ORIGIN}",
-    }
-    if has_request_context():
-        ip = _client_ip()
-        if ip:
-            headers["X-Forwarded-For"] = ip
     try:
-        resp = _http_post(url, json=payload, headers=headers, timeout=30)
+        resp = _http_post(url, json=payload, headers=_misskey_headers(), timeout=30)
         resp.raise_for_status()
         data = resp.json()
         
@@ -1240,7 +1242,7 @@ def _ensure_required_style_subscription(data, token):
     
     usable_ids = _usable_style_ids(token)
     if style_id in usable_ids:
-        logging.info(f">>> 选择的文风已在可用文风列表中: {style_id}")
+        logging.debug(f">>> 选择的文风已在可用文风列表中: {style_id}")
         return {"success": True, "alreadyUsable": True}
 
     url = f"{MSK_ORIGIN}/api/agents/styles/subscribe"
@@ -1280,7 +1282,7 @@ def _ensure_required_session_style(token, session_id, session_data=None):
     
     #改了一下判断逻辑，现在只有空值才会切换
     if current_style_id:
-        logging.info(f">>> 文风已经选择，过过过: {session_id} dialogueStyleId={current_style_id}")
+        logging.debug(f">>> 文风已选择: {session_id} dialogueStyleId={current_style_id}")
         return
 
     logging.info(
@@ -1483,8 +1485,9 @@ def switch_session(data, token):
 
 def get_config(token):
     try:
-        session_id = _ensure_session_id(token)
-        data = _show_session_data(token, session_id)
+        session_id, data = _ensure_session(token)
+        if data is None:
+            data = _show_session_data(token, session_id)
         return jsonify(data), 200
     except requests.exceptions.HTTPError as e:
         status = e.response.status_code if e.response is not None else 500
@@ -1659,8 +1662,11 @@ async def _listen_misskey():
                 async for message in ws:
                     if token != _current_ws_token():
                         break
-                    data = json.loads(message)
-                    if data.get("type") != "channel":
+                    try:
+                        data = json.loads(message)
+                    except ValueError:
+                        continue
+                    if not isinstance(data, dict) or data.get("type") != "channel":
                         continue
                     body = data.get("body", {})
                     if body.get("type") == "notification":
@@ -1679,14 +1685,15 @@ async def _listen_misskey():
                         is_dup = False
                         owner = _message_owner_key(token)
                         with _lock:
-                            for m in reversed(messages_store[-10:]):
+                            for m in list(messages_store)[-10:][::-1]:
                                 if m.get("owner") == owner and m["role"] == "aliya" and m["content"] == text:
                                     is_dup = True
                                     break
 
                         if not is_dup:
                             logging.info("<<< 已收到 Misskey WebSocket 回复")
-                            ws_session_id = _ensure_session_id(token)
+                            # 不能在事件循环里做同步网络请求（会阻塞整个监听），只读本地缓存的当前会话。
+                            ws_session_id = _get_cached_session_id(token)
                             _add_message("aliya", text, token=token, session_id=ws_session_id)
         except asyncio.CancelledError:
             raise

@@ -285,8 +285,26 @@
         return html.join("");
     }
 
+    // 时间线重排会对同一批消息反复解析，缓存最近的解析结果。
+    var RENDER_CACHE_MAX = 400;
+    var renderCache = new Map();
+
+    function renderCached(source) {
+        var key = String(source == null ? "" : source);
+        var cached = renderCache.get(key);
+        if (cached !== undefined) {
+            renderCache.delete(key);
+            renderCache.set(key, cached);
+            return cached;
+        }
+        var html = renderMarkdown(key);
+        renderCache.set(key, html);
+        if (renderCache.size > RENDER_CACHE_MAX) renderCache.delete(renderCache.keys().next().value);
+        return html;
+    }
+
     function renderInto(container, source) {
-        container.innerHTML = renderMarkdown(source);
+        container.innerHTML = renderCached(source);
     }
 
     window.AliyaMessageRenderer = {

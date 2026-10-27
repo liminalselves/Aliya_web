@@ -231,19 +231,30 @@ document.addEventListener("DOMContentLoaded", function (event) {
     applyBackgroundMusic(savedBackgroundMusic, false);
 
     function setRem() {
-        const designWidth = 1080; 
-        const baseFontSize = 6; 
+        const designWidth = 1080;
+        const baseFontSize = 6;
         const scale = document.documentElement.clientWidth / designWidth;
         document.documentElement.style.fontSize = baseFontSize * scale + "px";
     }
-    setRem(); 
-    window.addEventListener("resize", setRem); 
+    var setRemFrame = 0;
+    function scheduleSetRem() {
+        if (setRemFrame) return;
+        setRemFrame = requestAnimationFrame(function() {
+            setRemFrame = 0;
+            setRem();
+        });
+    }
+    setRem();
+    window.addEventListener("resize", scheduleSetRem);
 
     // 心电图模块开始 (保持原样)
     const canvas = document.getElementById('ecgCanvas');
     const ctx = canvas.getContext('2d');
-    canvas.width = 260;
-    canvas.height = 200;
+    // 按设备像素比放大位图，避免高分屏下心电图发虚；绘制仍使用 260x200 逻辑坐标。
+    const ecgPixelRatio = Math.min(window.devicePixelRatio || 1, 2);
+    canvas.width = 260 * ecgPixelRatio;
+    canvas.height = 200 * ecgPixelRatio;
+    ctx.setTransform(ecgPixelRatio, 0, 0, ecgPixelRatio, 0, 0);
     const ecgPoints = [
         { x: 0, y: 100 }, { x: 80, y: 100 }, { x: 90, y: 90 }, { x: 95, y: 110 },
         { x: 100, y: 70 }, { x: 110, y: 130 }, { x: 130, y: 40 }, { x: 150, y: 160 },
@@ -298,24 +309,21 @@ document.addEventListener("DOMContentLoaded", function (event) {
     
     function drawTrailWithGradient() {
         let previousPoint = null;
-        const reversedPoints = [...tailPoints].reverse(); 
         ctx.globalCompositeOperation = 'screen';
-        reversedPoints.forEach((point, index) => { 
-            if (!point) { previousPoint = null; return; }
-            const alpha = Math.max(0, 1 - index * GRADIENT_FALLOFF); 
+        ctx.lineWidth = 2;
+        for (let index = 0; index < tailPoints.length; index++) {
+            const point = tailPoints[tailPoints.length - 1 - index];
+            if (!point) { previousPoint = null; continue; }
             if (previousPoint) {
-                const gradient = ctx.createLinearGradient(point.x, point.y, previousPoint.x, previousPoint.y);
-                gradient.addColorStop(0, `rgba(255,255,255,${alpha})`);
-                gradient.addColorStop(1, `rgba(255,255,255,${alpha * 1})`);
+                const alpha = Math.max(0, 1 - index * GRADIENT_FALLOFF);
                 ctx.beginPath();
                 ctx.moveTo(point.x, point.y);
                 ctx.lineTo(previousPoint.x, previousPoint.y);
-                ctx.strokeStyle = gradient;
-                ctx.lineWidth = 2;
+                ctx.strokeStyle = 'rgba(255,255,255,' + alpha + ')';
                 ctx.stroke();
             }
             previousPoint = point;
-        });
+        }
         ctx.globalCompositeOperation = 'source-over';
     }
 
@@ -597,8 +605,6 @@ document.addEventListener("DOMContentLoaded", function (event) {
         else if (!radioButton.checked) { noisebgm.pause(); Litterbgm.pause(); playBackgroundMusic(); }
     }
     function buttonBgm() { safePlay(document.getElementById("buttonbgm")); }
-    function togglePlay(audio) { audio.paused ? safePlay(audio) : audio.pause(); }
-    function isPlaying(audio) { return !audio.paused && !audio.ended && audio.currentTime > 0; }
     radioButton.addEventListener('change', function () {
         if (this.checked) { mainbgm.pause(); checkCurrentInterval(++positon) } 
         else { playBackgroundMusic(); noisebgm.pause(); Litterbgm.pause() }
@@ -633,6 +639,7 @@ document.addEventListener("DOMContentLoaded", function (event) {
 
     // 事件委托：处理聊天区图片点击
     var aliyaText = document.getElementById("aliyaText");
+    var renderTarget = aliyaText;
     aliyaText.addEventListener('click', function(e) {
         let target = e.target;
         if (target.tagName === 'IMG' && target.classList.contains('zoomable-img')) {
@@ -689,6 +696,7 @@ document.addEventListener("DOMContentLoaded", function (event) {
 
     document.addEventListener('keydown', function(e) {
         if (e.key === 'Escape' && overlay.classList.contains('active')) {
+            e.preventDefault();
             overlay.classList.remove('active');
             document.body.style.overflow = '';
         }
@@ -722,18 +730,30 @@ document.addEventListener("DOMContentLoaded", function (event) {
     }
 
     // 【修复】即使没有 msgId，也要清理原始提示词
+    // 时间线每次重渲染都会重新解析历史消息，按消息缓存占位图请求，避免重复打 msk。
+    var placeholderImageCache = {};
+    function cachedPlaceholderImage(msgId, index) {
+        var key = (currentSessionId || "") + "|" + msgId + "|" + index;
+        if (!placeholderImageCache[key]) {
+            placeholderImageCache[key] = fetchPlaceholderImage(msgId, index).then(function(url) {
+                if (!url) delete placeholderImageCache[key];
+                return url;
+            });
+        }
+        return placeholderImageCache[key];
+    }
+
     async function processDrawingInstruction(text, msgId) {
         var regex = /\[\[agent_draw\s+size=([^\s]+)\s+tag=([^\]]+)\]\]/g;
-        var cleanText = text;
+        var source = String(text || "");
+        var matches = [...source.matchAll(regex)];
+        if (!matches.length) return { text: source.trim(), images: [] };
+        var cleanText = source;
+        matches.forEach(function(m) { cleanText = cleanText.replace(m[0], ""); });
         var images = [];
-        var matches = [...text.matchAll(regex)];
-        for (var i = 0; i < matches.length; i++) {
-            var m = matches[i];
-            cleanText = cleanText.replace(m[0], "");
-            if (msgId) {
-                var imgUrl = await fetchPlaceholderImage(msgId, i);
-                if (imgUrl) images.push(imgUrl);
-            }
+        if (msgId) {
+            var urls = await Promise.all(matches.map(function(_m, i) { return cachedPlaceholderImage(msgId, i); }));
+            images = urls.filter(Boolean);
         }
         return { text: cleanText.trim(), images: images };
     }
@@ -1052,8 +1072,6 @@ document.addEventListener("DOMContentLoaded", function (event) {
     var isTimelineLoading = false;
     var timelineLoadPromise = null;
     var chatLoadingNoticeTimer = null;
-    var timelineSnapshotSignature = "";
-    var timelineSnapshotMessageIds = {};
     var timelineRenderedItems = [];
     var timelineRenderedSessionId = null;
     var sendInFlight = false;
@@ -1094,7 +1112,7 @@ document.addEventListener("DOMContentLoaded", function (event) {
         if (aliyaText.scrollTop < 50) {
             loadMoreHistory();
         }
-    });
+    }, { passive: true });
     var scrollObserver = new MutationObserver(function () {
         // 加载历史消息期间跳过，避免与滚动位置补偿争抢
         if (isLoadingMore || isTimelineLoading) return;
@@ -1103,6 +1121,13 @@ document.addEventListener("DOMContentLoaded", function (event) {
         }
     });
     scrollObserver.observe(aliyaText, { childList: true, subtree: true });
+    // 懒加载图片完成后会撑高聊天区但不产生 DOM 变更，贴底状态下需要补一次滚动。
+    aliyaText.addEventListener("load", function(e) {
+        if (!e.target || e.target.tagName !== "IMG") return;
+        if (isAtBottomFlag && !isLoadingMore && !isTimelineLoading) {
+            aliyaText.scrollTop = aliyaText.scrollHeight;
+        }
+    }, true);
 
     // ==================== 分段回复配置 ====================
     var segConfig = {
@@ -1361,6 +1386,12 @@ document.addEventListener("DOMContentLoaded", function (event) {
         li.appendChild(body);
     }
 
+    var timelineFormatters = {};
+    function timelineFormatter(key, locale, options) {
+        if (!timelineFormatters[key]) timelineFormatters[key] = new Intl.DateTimeFormat(locale, options);
+        return timelineFormatters[key];
+    }
+
     function parseTimelineDate(value) {
         if (!value) return null;
         var date = new Date(value);
@@ -1370,7 +1401,7 @@ document.addEventListener("DOMContentLoaded", function (event) {
     function formatTimelineDate(value) {
         var date = parseTimelineDate(value);
         if (!date) return "";
-        return new Intl.DateTimeFormat("zh-CN", {
+        return timelineFormatter("monthDay", "zh-CN", {
             timeZone: "Asia/Shanghai",
             month: "numeric",
             day: "numeric"
@@ -1380,7 +1411,7 @@ document.addEventListener("DOMContentLoaded", function (event) {
     function timelineDayKey(value) {
         var date = parseTimelineDate(value);
         if (!date) return "";
-        return new Intl.DateTimeFormat("en-CA", {
+        return timelineFormatter("dayKey", "en-CA", {
             timeZone: "Asia/Shanghai",
             year: "numeric",
             month: "2-digit",
@@ -1399,11 +1430,11 @@ document.addEventListener("DOMContentLoaded", function (event) {
         var nextText = formatTimelineDate(nextTimestamp);
         if (!previousText || !nextText) return;
         var li = document.createElement("li");
-        li.className = "timeline-date-divider";
+        li.className = "timeline-date-divider" + (suppressEnterAnimation ? "" : " msg-enter");
         li.setAttribute("role", "separator");
         li.setAttribute("aria-label", "消息日期从 " + previousText + " 到 " + nextText);
         li.innerHTML = '<span>↑ ' + previousText + '</span><span class="timeline-date-divider-line" aria-hidden="true"></span><span>' + nextText + ' ↓</span>';
-        aliyaText.appendChild(li);
+        renderTarget.appendChild(li);
     }
 
     function appendLiveTimelineDateDivider(timestamp) {
@@ -1426,7 +1457,7 @@ document.addEventListener("DOMContentLoaded", function (event) {
         if (delta < day) return Math.floor(delta / hour) + "小时前";
         if (delta < 7 * day) return Math.floor(delta / day) + "天前";
         if (delta < 30 * day) return Math.floor(delta / (7 * day)) + "周前";
-        return new Intl.DateTimeFormat("zh-CN", {
+        return timelineFormatter("fullMinute", "zh-CN", {
             timeZone: "Asia/Shanghai",
             year: "numeric",
             month: "2-digit",
@@ -1455,7 +1486,7 @@ document.addEventListener("DOMContentLoaded", function (event) {
         if (!scheduleSummary && !relativeTime) return;
 
         var li = document.createElement("li");
-        li.className = "message-meta " + role;
+        li.className = "message-meta " + role + (suppressEnterAnimation ? "" : " msg-enter");
         if (scheduleSummary) {
             var schedule = document.createElement("span");
             schedule.className = "message-schedule-summary" + (messageMeta.proactiveScheduleControlFailed ? " is-failed" : "");
@@ -1466,7 +1497,7 @@ document.addEventListener("DOMContentLoaded", function (event) {
             var time = document.createElement("time");
             time.className = "message-time";
             time.dateTime = timestamp;
-            time.title = new Intl.DateTimeFormat("zh-CN", {
+            time.title = timelineFormatter("fullSecond", "zh-CN", {
                 timeZone: "Asia/Shanghai",
                 year: "numeric", month: "2-digit", day: "2-digit",
                 hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false
@@ -1474,7 +1505,7 @@ document.addEventListener("DOMContentLoaded", function (event) {
             time.textContent = "◷ " + relativeTime;
             li.appendChild(time);
         }
-        aliyaText.appendChild(li);
+        renderTarget.appendChild(li);
     }
 
     // 【修复】图片渲染为独立卡片
@@ -1485,7 +1516,7 @@ document.addEventListener("DOMContentLoaded", function (event) {
             li.className = role + (suppressEnterAnimation ? "" : " msg-enter");
             if (msgId) li.setAttribute("data-message-id", msgId);
             appendMessageContent(li, String(content));
-            aliyaText.appendChild(li);
+            renderTarget.appendChild(li);
         }
         if (images && images.length > 0) {
             images.forEach(function(imgUrl, imgIndex) {
@@ -1496,12 +1527,13 @@ document.addEventListener("DOMContentLoaded", function (event) {
                 card.className = "image-card";
                 var img = document.createElement("img");
                 img.src = imgUrl;
+                img.alt = "图片";
                 img.className = "zoomable-img";
                 img.loading = "lazy";
                 img.decoding = "async";
                 card.appendChild(img);
                 li.appendChild(card);
-                aliyaText.appendChild(li);
+                renderTarget.appendChild(li);
             });
         }
         if (messageMeta || msgTimestamp) {
@@ -1509,18 +1541,6 @@ document.addEventListener("DOMContentLoaded", function (event) {
         }
     }
 
-    function dedupMessages(msgs) {
-        var seen = {};
-        var result = [];
-        for (var i = 0; i < msgs.length; i++) {
-            var m = msgs[i];
-            var fp = m.role + "|" + m.content + "|" + Math.floor(m.timestamp);
-            if (!seen[fp]) { seen[fp] = true; result.push(m); }
-        }
-        return result;
-    }
-
-    // prependMessages 已移除，timeline 一次性返回全部消息
 
     function setWaiting(isWaiting, message) {
         isWaitingReply = isWaiting;
@@ -1563,62 +1583,44 @@ document.addEventListener("DOMContentLoaded", function (event) {
         }, 3200);
     }
 
-    function buildTimelineSnapshotSignature(messages) {
-        return JSON.stringify({
-            sessionId: currentSessionId || "",
-            messages: messages.map(function(msg) {
-                var file = msg && msg.file;
-                return [
-                    msg && msg.id,
-                    msg && msg.role,
-                    msg && msg.content,
-                    msg && msg.createdAt,
-                    file && file.id,
-                    file && file.url,
-                    file && file.thumbnailUrl,
-                    file && file.type,
-                    msg && msg.imageRecognitionStatus,
-                    msg && msg.imageRecognitionDescription,
-                    msg && msg.proactiveScheduleActionTypes,
-                    msg && msg.proactiveScheduleControlFailed
-                ];
-            })
-        });
-    }
 
     function renderPreparedTimelineMessages(items, scrollToLatest) {
         var oldScrollTop = aliyaText.scrollTop;
         var oldScrollHeight = aliyaText.scrollHeight;
         clearSegmentPlaybackTimers();
         suppressEnterAnimation = true;
-        aliyaText.innerHTML = "";
-        for (var renderedIndex = 0; renderedIndex < items.length; renderedIndex++) {
-            var rendered = items[renderedIndex];
-            var messageMeta = {
-                timestamp: rendered.timestamp || null,
-                proactiveScheduleActionTypes: rendered.proactiveScheduleActionTypes || [],
-                proactiveScheduleControlFailed: rendered.proactiveScheduleControlFailed === true
-            };
-            if (rendered.role === "aliya") {
-                // 已有消息切换分段设置时要立即全部重排，不播放逐段延迟。
-                renderAliyaMessage(rendered.content, rendered.images, true, messageMeta, rendered.id);
-            } else {
-                appendMessage(rendered.role, rendered.content, rendered.timestamp, rendered.images, rendered.id, messageMeta);
+        var fragment = document.createDocumentFragment();
+        renderTarget = fragment;
+        try {
+            for (var renderedIndex = 0; renderedIndex < items.length; renderedIndex++) {
+                var rendered = items[renderedIndex];
+                var messageMeta = {
+                    timestamp: rendered.timestamp || null,
+                    proactiveScheduleActionTypes: rendered.proactiveScheduleActionTypes || [],
+                    proactiveScheduleControlFailed: rendered.proactiveScheduleControlFailed === true
+                };
+                if (rendered.role === "aliya") {
+                    // 已有消息切换分段设置时要立即全部重排，不播放逐段延迟。
+                    renderAliyaMessage(rendered.content, rendered.images, true, messageMeta, rendered.id);
+                } else {
+                    appendMessage(rendered.role, rendered.content, rendered.timestamp, rendered.images, rendered.id, messageMeta);
+                }
+                var nextRendered = items[renderedIndex + 1];
+                if (nextRendered && shouldRenderTimelineDateDivider(rendered.timestamp, nextRendered.timestamp)) {
+                    appendTimelineDateDivider(rendered.timestamp, nextRendered.timestamp);
+                }
             }
-            var nextRendered = items[renderedIndex + 1];
-            if (nextRendered && shouldRenderTimelineDateDivider(rendered.timestamp, nextRendered.timestamp)) {
-                appendTimelineDateDivider(rendered.timestamp, nextRendered.timestamp);
-            }
+        } finally {
+            renderTarget = aliyaText;
+            suppressEnterAnimation = false;
         }
-        requestAnimationFrame(function() {
-            if (scrollToLatest) {
-                aliyaText.scrollTop = aliyaText.scrollHeight;
-            } else {
-                // 向上加载历史或重排时按高度差补偿，保持用户当前查看的内容不跳到顶部。
-                aliyaText.scrollTop = oldScrollTop + (aliyaText.scrollHeight - oldScrollHeight);
-            }
-        });
-        suppressEnterAnimation = false;
+        aliyaText.replaceChildren(fragment);
+        if (scrollToLatest) {
+            aliyaText.scrollTop = aliyaText.scrollHeight;
+        } else {
+            // 向上加载历史或重排时按高度差补偿，保持用户当前查看的内容不跳到顶部。
+            aliyaText.scrollTop = oldScrollTop + (aliyaText.scrollHeight - oldScrollHeight);
+        }
     }
 
     function rerenderCurrentTimelineForSegmentSetting() {
@@ -1649,6 +1651,10 @@ document.addEventListener("DOMContentLoaded", function (event) {
         var renderedMessages = [];
         var hrProcessed = false;
 
+        var drawingResults = await Promise.all(data.map(function(msg) {
+            return msg.role === "user" ? null : processDrawingInstruction(msg.content || "", msg.id);
+        }));
+
         // MSK 返回最新→最旧，倒序渲染为页面所需的最旧→最新。
         for (var i = data.length - 1; i >= 0; i--) {
             var msg = data[i];
@@ -1656,7 +1662,7 @@ document.addEventListener("DOMContentLoaded", function (event) {
             var cleanContent = msg.content || "";
             var images = timelineAttachmentImageUrls(msg.file);
             if (role === "aliya") {
-                var processed = await processDrawingInstruction(cleanContent, msg.id);
+                var processed = drawingResults[i];
                 cleanContent = processed.text;
                 images = images.concat(processed.images);
                 var hrResult = processHeartRateInstruction(cleanContent);
@@ -1691,19 +1697,7 @@ document.addEventListener("DOMContentLoaded", function (event) {
         if (data.length > 0) {
             earliestMsgId = data[data.length - 1].id;
         }
-        timelineSnapshotMessageIds = {};
-        data.forEach(function(msg) {
-            if (msg && msg.id) timelineSnapshotMessageIds[msg.id] = true;
-        });
-        timelineSnapshotSignature = buildTimelineSnapshotSignature(data);
     }
-
-    // [DEPRECATED] 增量渲染轮询拿到的新消息，避免清空 DOM 重渲染导致闪烁，同时保留新 al 消息的逐句分段延迟。
-    // 该机制因为与实时的 sendMessage() 产生严重的并发竞争、状态交错以及防重匹配困难被废弃。
-    // 恢复到原有的稳定模式：平时只做 append 增量，会话切换才做全量 snapshot。
-    /* 
-    async function applyTimelineSnapshotIncremental(data, scrollToLatest) { ... }
-    */
 
     // 初始化拉取消息（通过 timeline 端点，type=new）
     async function fetchInitialMessages() {
@@ -1795,13 +1789,16 @@ document.addEventListener("DOMContentLoaded", function (event) {
         // messages 是降序（最新→最旧），通过 unshift 整理为最旧→最新。
         var prependSessionId = currentSessionId;
         var preparedMessages = [];
+        var drawingResults = await Promise.all(messages.map(function(msg) {
+            return msg.role === "user" ? null : processDrawingInstruction(msg.content || "", msg.id);
+        }));
         for (var i = 0; i < messages.length; i++) {
             var msg = messages[i];
             var role = msg.role === "user" ? "player" : "aliya";
             var cleanContent = msg.content;
             var images = timelineAttachmentImageUrls(msg.file);
             if (role === "aliya") {
-                var processed = await processDrawingInstruction(msg.content, msg.id);
+                var processed = drawingResults[i];
                 cleanContent = processed.text;
                 images = images.concat(processed.images);
                 var hrResult = processHeartRateInstruction(cleanContent);
@@ -1834,39 +1831,6 @@ document.addEventListener("DOMContentLoaded", function (event) {
         renderPreparedTimelineMessages(timelineRenderedItems, false);
     }
 
-    function insertMessageAtTop(role, content, images) {
-        // 使用文档片段收集新元素，一次性插入到顶部
-        var fragment = document.createDocumentFragment();
-
-        if (content !== null && content !== undefined && String(content) !== "") {
-            var li = document.createElement("li");
-            li.className = role;
-            appendMessageContent(li, String(content));
-            fragment.appendChild(li);
-        }
-        if (images && images.length > 0) {
-            images.forEach(function(imgUrl) {
-                var li = document.createElement("li");
-                li.className = role + " image-only";
-                var card = document.createElement("div");
-                card.className = "image-card";
-                var img = document.createElement("img");
-                img.src = imgUrl;
-                img.className = "zoomable-img";
-                img.loading = "lazy";
-                img.decoding = "async";
-                card.appendChild(img);
-                li.appendChild(card);
-                fragment.appendChild(li);
-            });
-        }
-        // 插入到最前面
-        if (aliyaText.firstChild) {
-            aliyaText.insertBefore(fragment, aliyaText.firstChild);
-        } else {
-            aliyaText.appendChild(fragment);
-        }
-    }
 
     // 轮询消息，回归到稳定版本中的简单增量追加逻辑。
     async function pollMessages() {
@@ -1883,29 +1847,17 @@ document.addEventListener("DOMContentLoaded", function (event) {
             if (data.snapshot === true && Array.isArray(data.messages)) {
                 // 会话切换期间可能有旧请求返回，不能用旧会话覆盖当前聊天区。
                 if (data.session_id && data.session_id !== currentSessionId) return;
-                // [DEPRECATED] 复杂的快照比对与增量更新：废弃，改用下面的简单增量追加。
-                /*
-                var snapshotSignature = buildTimelineSnapshotSignature(data.messages);
-                if (snapshotSignature !== timelineSnapshotSignature) {
-                    var hasNewAssistant = data.messages.some(function(msg) {
-                        return msg && msg.role === "assistant" && msg.id && !timelineSnapshotMessageIds[msg.id];
-                    });
-                    await applyTimelineSnapshotIncremental(data.messages, isAtBottomFlag);
-                    if (!sendInFlight) {
-                        recentlySentSet = {};
-                        recentlyReceivedSet = {};
-                        if (hasNewAssistant && isWaitingReply) setWaiting(false);
-                    }
-                }
-                */
                 // 恢复稳定版逻辑：如果后端返回了 snapshot，我们只从中提取 id > lastMsgId 的消息进行追加。
                 // 这避免了与 sendMessage 在时间线上的状态竞争。
                 var snapshotSessionId = currentSessionId;
                 var appendedAny = false;
                 var appendedAssistant = false;
-                for (var i = 0; i < data.messages.length; i++) {
-                    var m = data.messages[i];
-                    if (!m || !m.id || m.id <= lastMsgId) continue;
+                // 快照为最新→最旧，必须按最旧→最新处理：否则推进游标后同批更早的新消息会被跳过。
+                var freshMessages = data.messages.filter(function(item) {
+                    return item && item.id && !(item.id <= lastMsgId);
+                }).reverse();
+                for (var i = 0; i < freshMessages.length; i++) {
+                    var m = freshMessages[i];
                     // Misskey 时间线返回的 role 是 user/assistant，而本地消息存储用的是 player/aliya。
                     // 统一映射后再比较，否则防重判断永远不命中，导致用户消息被 poll 重复渲染。
                     var mRole = m.role === "user" ? "player" : (m.role === "assistant" ? "aliya" : m.role);
@@ -1934,16 +1886,23 @@ document.addEventListener("DOMContentLoaded", function (event) {
                         // 关键：在 await 图片处理之前就标记消息 id，避免 await 期间 sendMessage 重复渲染。
                         markReceivedId(m.id);
                         var processed = await processDrawingInstruction(m.content, m.id);
+                        if (snapshotSessionId !== currentSessionId) return;
                         var hrResult = processHeartRateInstruction(processed.text);
                         if (!hrResult.matched) {
                             currentRange = ranges.medium;
                             updateDisplay();
                         }
-                        renderAliyaMessage(hrResult.text, timelineAttachmentImageUrls(m.file).concat(processed.images), false, {
+                        var polledImages = timelineAttachmentImageUrls(m.file).concat(processed.images);
+                        var polledMeta = {
                             timestamp: m.createdAt || m.timestamp || null,
                             proactiveScheduleActionTypes: m.proactiveScheduleActionTypes || m.proactive_schedule_action_types || [],
                             proactiveScheduleControlFailed: m.proactiveScheduleControlFailed === true || m.proactive_schedule_control_failed === true
-                        }, m.id);
+                        };
+                        // 写入已渲染时间线，否则加载历史/切换分段重排时轮询到的消息会消失。
+                        appendLiveTimelineDateDivider(polledMeta.timestamp);
+                        rememberTimelineItem("aliya", hrResult.text, polledImages, m.id, polledMeta.timestamp,
+                            polledMeta.proactiveScheduleActionTypes, polledMeta.proactiveScheduleControlFailed);
+                        renderAliyaMessage(hrResult.text, polledImages, false, polledMeta, m.id);
                         // 用 IIFE 捕获本条消息内容，避免 var 循环变量被 setTimeout 闭包引用到最后一条消息。
                         (function (contentKey) {
                             recentlyReceivedSet[contentKey] = true;
@@ -1951,59 +1910,17 @@ document.addEventListener("DOMContentLoaded", function (event) {
                         })(m.content);
                         appendedAssistant = true;
                     } else if (mRole === "player") {
-                        appendMessage("player", m.content, m.createdAt || m.timestamp || null, timelineAttachmentImageUrls(m.file));
+                        var polledPlayerImages = timelineAttachmentImageUrls(m.file);
+                        var polledPlayerTimestamp = m.createdAt || m.timestamp || null;
+                        appendLiveTimelineDateDivider(polledPlayerTimestamp);
+                        rememberTimelineItem("player", m.content, polledPlayerImages, m.id, polledPlayerTimestamp);
+                        appendMessage("player", m.content, polledPlayerTimestamp, polledPlayerImages, m.id);
                     }
                     lastMsgId = m.id;
                     appendedAny = true;
                 }
                 if (appendedAssistant && isWaitingReply) setWaiting(false);
                 return;
-            }
-            if (data.messages && data.messages.length > 0) {
-                for (var i = 0; i < data.messages.length; i++) {
-                    var msg = data.messages[i];
-                    var msgRole = msg.role === "user" ? "player" : (msg.role === "assistant" ? "aliya" : msg.role);
-                    if (msgRole === "player" && recentlySentSet[msg.content]) {
-                        if (msg.id > lastMsgId) lastMsgId = msg.id;
-                        delete recentlySentSet[msg.content];
-                        continue;
-                    }
-                    if (msgRole === "aliya" && msg.id && receivedMsgIds[msg.id]) {
-                        if (msg.id > lastMsgId) lastMsgId = msg.id;
-                        continue;
-                    }
-                    if (msgRole === "aliya" && isRecentlyReceived(msg.content)) {
-                        if (msg.id > lastMsgId) lastMsgId = msg.id;
-                        delete recentlyReceivedSet[msg.content];
-                        continue;
-                    }
-
-                    if (msgRole === "aliya") {
-                        // 关键：在 await 图片处理之前就标记消息 id，避免 await 期间 sendMessage 重复渲染。
-                        markReceivedId(msg.id);
-                        var processed = await processDrawingInstruction(msg.content, msg.msk_msg_id);
-                        var hrResult = processHeartRateInstruction(processed.text);
-                        if (!hrResult.matched) {
-                            // 新消息没有心率指令，恢复默认
-                            currentRange = ranges.medium;
-                            updateDisplay();
-                        }
-                        renderAliyaMessage(hrResult.text, timelineAttachmentImageUrls(msg.file).concat(processed.images), false, {
-                            timestamp: msg.createdAt || msg.timestamp || null,
-                            proactiveScheduleActionTypes: msg.proactiveScheduleActionTypes || msg.proactive_schedule_action_types || [],
-                            proactiveScheduleControlFailed: msg.proactiveScheduleControlFailed === true || msg.proactive_schedule_control_failed === true
-                        }, msg.msk_msg_id);
-                        (function (contentKey) {
-                            recentlyReceivedSet[contentKey] = true;
-                            setTimeout(function() { delete recentlyReceivedSet[contentKey]; }, 300000);
-                        })(msg.content);
-                    } else {
-                        appendMessage(msgRole, msg.content, msg.createdAt || msg.timestamp || null, timelineAttachmentImageUrls(msg.file));
-                    }
-                    
-                    if (msg.id > lastMsgId) lastMsgId = msg.id;
-                    if (msgRole === "aliya" && isWaitingReply) { setWaiting(false); }
-                }
             }
         } catch (err) {
             console.log("轮询消息失败：", err);
@@ -2154,18 +2071,43 @@ document.addEventListener("DOMContentLoaded", function (event) {
     var backgroundMusicSelect = document.getElementById("backgroundMusicSelect");
     var playModeSelect = document.getElementById("playModeSelect");
 
+    // 弹窗先播放退场动画再隐藏；动画期间重新打开会撤销本次关闭。
+    function closeOverlayAnimated(overlayEl, onClosed) {
+        if (!overlayEl || !overlayEl.classList.contains("active")) {
+            if (onClosed) onClosed();
+            return;
+        }
+        if (overlayEl.classList.contains("is-closing")) return;
+        overlayEl.classList.add("is-closing");
+        var finished = false;
+        function finish() {
+            if (finished) return;
+            finished = true;
+            overlayEl.removeEventListener("animationend", onEnd);
+            if (!overlayEl.classList.contains("is-closing")) return;
+            overlayEl.classList.remove("is-closing", "active");
+            if (onClosed) onClosed();
+        }
+        function onEnd(e) {
+            if (e.target === overlayEl) finish();
+        }
+        overlayEl.addEventListener("animationend", onEnd);
+        setTimeout(finish, 320);
+    }
+
     function openSettingsPanel() {
         segTokenInput.value = "";
         segTokenInput.placeholder = mskToken ? "留空保持当前 Token" : "Misskey API Token";
         if (backgroundMusicSelect) backgroundMusicSelect.value = activeBackgroundMusic;
         if (playModeSelect) playModeSelect.value = activePlayMode;
+        settingsOverlay.classList.remove("is-closing");
         settingsOverlay.classList.add("active");
         settingsStatus.textContent = "";
         settingsStatus.className = "op-status";
     }
 
     function closeSettingsPanel() {
-        settingsOverlay.classList.remove("active");
+        closeOverlayAnimated(settingsOverlay);
     }
 
     settingsBtn.addEventListener("click", openSettingsPanel);
@@ -2819,7 +2761,16 @@ document.addEventListener("DOMContentLoaded", function (event) {
             item.appendChild(infoDiv);
             item.appendChild(idSpan);
 
+            item.tabIndex = 0;
+            item.setAttribute("role", "button");
+            if (session.id === opCurrentSessionId) item.setAttribute("aria-current", "true");
             item.addEventListener("click", function() { opRequestSessionSwitch(session); });
+            item.addEventListener("keydown", function(e) {
+                if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    opRequestSessionSwitch(session);
+                }
+            });
 
             opSessionList.appendChild(item);
         });
@@ -2943,6 +2894,7 @@ document.addEventListener("DOMContentLoaded", function (event) {
     }
 
     async function opOpenPanel() {
+        opOverlay.classList.remove("is-closing");
         opOverlay.classList.add("active");
         opShowStatus("");
         var hasCurrentConfig = !!opConfigLoadedSessionId && opConfigLoadedSessionId === (opCurrentSessionId || currentSessionId);
@@ -2963,11 +2915,15 @@ document.addEventListener("DOMContentLoaded", function (event) {
     }
 
     function opClosePanel() {
-        opOverlay.classList.remove("active");
-        opDestroyAgentControl();
+        closeOverlayAnimated(opOverlay, opDestroyAgentControl);
     }
 
     operationBtn.addEventListener("click", opOpenPanel);
+    document.addEventListener("keydown", function(e) {
+        if (e.key !== "Escape" || e.defaultPrevented) return;
+        if (opOverlay.classList.contains("active")) opClosePanel();
+        else if (settingsOverlay.classList.contains("active")) closeSettingsPanel();
+    });
     opCloseBtn.addEventListener("click", opClosePanel);
     opOverlay.addEventListener("click", function(e) {
         if (e.target === opOverlay) opClosePanel();

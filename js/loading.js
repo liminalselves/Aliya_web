@@ -24,7 +24,10 @@ document.addEventListener("DOMContentLoaded", function (event) {
         canvas.width = window.innerWidth;
         canvas.height = window.innerHeight;
     }
-    window.addEventListener('resize', resizeCanvas);
+    window.addEventListener('resize', function () {
+        // 过场结束后画布已释放，不再随窗口变化重新分配。
+        if (isAnimating) resizeCanvas();
+    });
 
     function starCountForViewport() {
         return Math.min(MAX_STAR_COUNT, Math.max(120, Math.floor((canvas.width * canvas.height) / 5000)));
