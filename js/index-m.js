@@ -247,9 +247,11 @@ document.addEventListener("DOMContentLoaded", function (event) {
     setRem();
     window.addEventListener("resize", scheduleSetRem);
 
+    // 用 visualViewport：iOS 弹出键盘时 innerHeight 不变，输入框会被键盘盖住。
     function updateViewport() {
-        const dvh = window.innerHeight * 0.01;
-        document.documentElement.style.setProperty('--dvh', `${dvh}px`);
+        const vv = window.visualViewport;
+        const height = vv ? vv.height : window.innerHeight;
+        document.documentElement.style.setProperty('--dvh', `${height * 0.01}px`);
     }
     var viewportFrame = 0;
     function scheduleViewportUpdate() {
@@ -261,6 +263,7 @@ document.addEventListener("DOMContentLoaded", function (event) {
     }
     window.addEventListener('resize', scheduleViewportUpdate);
     window.addEventListener('orientationchange', scheduleViewportUpdate);
+    if (window.visualViewport) window.visualViewport.addEventListener('resize', scheduleViewportUpdate);
     updateViewport();
 
     setTimeout(() => {
@@ -324,7 +327,6 @@ document.addEventListener("DOMContentLoaded", function (event) {
     const tailMaxLength = 60;
     let isLooping = false;
     const GRADIENT_FALLOFF = 0.03;  
-    const reduceMotionQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
     let ecgAnimationFrame = null;
     let ecgLastTimestamp = null;
     let ecgTotalLength = 0;
@@ -335,26 +337,11 @@ document.addEventListener("DOMContentLoaded", function (event) {
     }
 
     function ecgShouldAnimate() {
-        return !document.hidden && !reduceMotionQuery.matches;
-    }
-
-    function drawStaticEcg() {
-        ecgCtxs.forEach(function(ctx, i) {
-            ctx.clearRect(0, 0, ecgCanvases[i].width, ecgCanvases[i].height);
-            ctx.beginPath();
-            ecgPoints.forEach(function(point, index) {
-                if (index === 0) ctx.moveTo(point.x, point.y);
-                else ctx.lineTo(point.x, point.y);
-            });
-            ctx.strokeStyle = "rgba(255, 255, 255, 0.8)";
-            ctx.lineWidth = 2;
-            ctx.stroke();
-        });
+        return !document.hidden;
     }
 
     function startEcgAnimation() {
         if (!ecgShouldAnimate()) {
-            if (!document.hidden && reduceMotionQuery.matches) drawStaticEcg();
             return;
         }
         if (ecgAnimationFrame) return;
@@ -436,11 +423,6 @@ document.addEventListener("DOMContentLoaded", function (event) {
         ecgAnimationFrame = requestAnimationFrame(draw);
     }
     document.addEventListener("visibilitychange", onEcgMotionStateChange);
-    if (reduceMotionQuery.addEventListener) {
-        reduceMotionQuery.addEventListener("change", onEcgMotionStateChange);
-    } else if (reduceMotionQuery.addListener) {
-        reduceMotionQuery.addListener(onEcgMotionStateChange);
-    }
     startEcgAnimation();
 
     // 音频与UI控制模块 (保持原样)
@@ -1261,36 +1243,36 @@ document.addEventListener("DOMContentLoaded", function (event) {
     // immediate=true 时即时渲染各分段（用于历史消息），不应用延迟
     // msgId 只挂在首个分段/图片元素上，用于控制台导航定位
     // 返回总分段播放时长（ms），0 表示无延迟播放
-    function renderAliyaMessage(cleanContent, images, immediate, messageMeta, msgId) {
+    function renderAliyaMessage(cleanContent, images, immediate, messageMeta, msgId, ref) {
         if (segConfig.enabled && cleanContent) {
             var segments = splitAssistantMessageIntoSegments(cleanContent);
             if (segments.length <= 1) {
-                appendMessage("aliya", cleanContent, messageMeta && messageMeta.timestamp, images, msgId, messageMeta);
+                appendMessage("aliya", cleanContent, messageMeta && messageMeta.timestamp, images, msgId, messageMeta, ref);
                 return 0;
             }
             var elapsed = 0;
             segments.forEach(function(seg, idx) {
                 if (immediate || idx === 0) {
-                    appendMessage("aliya", seg, null, null, idx === 0 ? msgId : null);
+                    appendMessage("aliya", seg, null, null, idx === 0 ? msgId : null, null, ref);
                     return;
                 }
                 elapsed += agentSegmentDelayMs(seg);
                 scheduleSegmentPlayback(function() {
-                    appendMessage("aliya", seg);
+                    appendMessage("aliya", seg, null, null, null, null, ref);
                 }, elapsed);
             });
             // 图片在最后一段之后渲染（无文字分段时首图承载 msgId）
             if (images && images.length > 0) {
                 if (immediate) {
                     images.forEach(function(imgUrl) {
-                        appendMessage("aliya", null, null, [imgUrl]);
+                        appendMessage("aliya", null, null, [imgUrl], null, null, ref);
                     });
                 } else {
                     elapsed += 300;
                     var imgDelay = elapsed;
                     scheduleSegmentPlayback(function() {
                         images.forEach(function(imgUrl) {
-                            appendMessage("aliya", null, null, [imgUrl]);
+                            appendMessage("aliya", null, null, [imgUrl], null, null, ref);
                         });
                     }, imgDelay);
                 }
@@ -1302,7 +1284,7 @@ document.addEventListener("DOMContentLoaded", function (event) {
             }
             return immediate ? 0 : elapsed;
         } else {
-            appendMessage("aliya", cleanContent, messageMeta && messageMeta.timestamp, images, null, messageMeta);
+            appendMessage("aliya", cleanContent, messageMeta && messageMeta.timestamp, images, null, messageMeta, ref);
             return 0;
         }
     }
@@ -1442,12 +1424,20 @@ document.addEventListener("DOMContentLoaded", function (event) {
 
     // 【修复】图片渲染为独立卡片
     // msgId 为 msk 消息 ID，写入 data-message-id 供控制台导航定位。
-    function appendMessage(role, content, msgTimestamp, images, msgId, messageMeta) {
+    // ref 指向 timelineRenderedItems 中的条目，供消息操作菜单（复制/编辑/回溯/删除）查找。
+    function markMessageRef(li, ref) {
+        if (!ref) return;
+        li.setAttribute("data-msg-ref", ref);
+        if (window.AliyaChatUI) window.AliyaChatUI.attachMoreButton(li);
+    }
+
+    function appendMessage(role, content, msgTimestamp, images, msgId, messageMeta, ref) {
         if (content !== null && content !== undefined && String(content) !== "") {
             var li = document.createElement("li");
             li.className = role + (suppressEnterAnimation ? "" : " msg-enter");
             if (msgId) li.setAttribute("data-message-id", msgId);
             appendMessageContent(li, String(content), role);
+            markMessageRef(li, ref);
             renderTarget.appendChild(li);
         }
         if (images && images.length > 0) {
@@ -1465,6 +1455,7 @@ document.addEventListener("DOMContentLoaded", function (event) {
                 img.decoding = "async";
                 card.appendChild(img);
                 li.appendChild(card);
+                markMessageRef(li, ref);
                 renderTarget.appendChild(li);
             });
         }
@@ -1526,6 +1517,7 @@ document.addEventListener("DOMContentLoaded", function (event) {
         try {
             for (var renderedIndex = 0; renderedIndex < items.length; renderedIndex++) {
                 var rendered = items[renderedIndex];
+                if (!rendered.ref) rendered.ref = nextTimelineRef();
                 var messageMeta = {
                     timestamp: rendered.timestamp || null,
                     proactiveScheduleActionTypes: rendered.proactiveScheduleActionTypes || [],
@@ -1533,9 +1525,9 @@ document.addEventListener("DOMContentLoaded", function (event) {
                 };
                 if (rendered.role === "aliya") {
                     // 已有消息切换分段设置时要立即全部重排，不播放逐段延迟。
-                    renderAliyaMessage(rendered.content, rendered.images, true, messageMeta, rendered.id);
+                    renderAliyaMessage(rendered.content, rendered.images, true, messageMeta, rendered.id, rendered.ref);
                 } else {
-                    appendMessage(rendered.role, rendered.content, rendered.timestamp, rendered.images, rendered.id, messageMeta);
+                    appendMessage(rendered.role, rendered.content, rendered.timestamp, rendered.images, rendered.id, messageMeta, rendered.ref);
                 }
                 var nextRendered = items[renderedIndex + 1];
                 if (nextRendered && shouldRenderTimelineDateDivider(rendered.timestamp, nextRendered.timestamp)) {
@@ -1560,20 +1552,31 @@ document.addEventListener("DOMContentLoaded", function (event) {
         renderPreparedTimelineMessages(timelineRenderedItems, false);
     }
 
-    function rememberTimelineItem(role, content, images, id, timestamp, proactiveScheduleActionTypes, proactiveScheduleControlFailed) {
+    var timelineRefSeq = 0;
+    function nextTimelineRef() {
+        timelineRefSeq += 1;
+        return "r" + timelineRefSeq;
+    }
+
+    // raw 为 MSK 原文（含生图/心率指令），编辑消息时回填；content 为展示文本。
+    function rememberTimelineItem(role, content, images, id, timestamp, proactiveScheduleActionTypes, proactiveScheduleControlFailed, raw) {
         if (timelineRenderedSessionId !== currentSessionId) {
             timelineRenderedItems = [];
             timelineRenderedSessionId = currentSessionId;
         }
-        timelineRenderedItems.push({
+        var item = {
+            ref: nextTimelineRef(),
             role: role,
             content: content || "",
+            raw: raw != null ? raw : (content || ""),
             images: images || [],
             id: id || null,
             timestamp: timestamp || null,
             proactiveScheduleActionTypes: proactiveScheduleActionTypes || [],
             proactiveScheduleControlFailed: proactiveScheduleControlFailed === true
-        });
+        };
+        timelineRenderedItems.push(item);
+        return item;
     }
 
     async function applyTimelineSnapshot(data, scrollToLatest) {
@@ -1610,6 +1613,7 @@ document.addEventListener("DOMContentLoaded", function (event) {
             renderedMessages.push({
                 role: role,
                 content: cleanContent,
+                raw: msg.content || "",
                 images: images,
                 id: msg.id,
                 timestamp: msg.createdAt || null,
@@ -1765,6 +1769,7 @@ document.addEventListener("DOMContentLoaded", function (event) {
                 preparedMessages.unshift({
                     role: role,
                     content: cleanContent,
+                    raw: msg.content || "",
                     images: images,
                     id: msg.id,
                     timestamp: msg.createdAt || null,
@@ -1775,6 +1780,7 @@ document.addEventListener("DOMContentLoaded", function (event) {
                 preparedMessages.unshift({
                     role: role,
                     content: cleanContent || "",
+                    raw: msg.content || "",
                     images: images,
                     id: msg.id,
                     timestamp: msg.createdAt || null,
@@ -1859,9 +1865,9 @@ document.addEventListener("DOMContentLoaded", function (event) {
                         };
                         // 写入已渲染时间线，否则加载历史/切换分段重排时轮询到的消息会消失。
                         appendLiveTimelineDateDivider(polledMeta.timestamp);
-                        rememberTimelineItem("aliya", hrResult.text, polledImages, m.id, polledMeta.timestamp,
-                            polledMeta.proactiveScheduleActionTypes, polledMeta.proactiveScheduleControlFailed);
-                        renderAliyaMessage(hrResult.text, polledImages, false, polledMeta, m.id);
+                        var polledItem = rememberTimelineItem("aliya", hrResult.text, polledImages, m.id, polledMeta.timestamp,
+                            polledMeta.proactiveScheduleActionTypes, polledMeta.proactiveScheduleControlFailed, m.content);
+                        renderAliyaMessage(hrResult.text, polledImages, false, polledMeta, m.id, polledItem.ref);
                         // 用 IIFE 捕获本条消息内容，避免 var 循环变量被 setTimeout 闭包引用到最后一条消息。
                         (function (contentKey) {
                             recentlyReceivedSet[contentKey] = true;
@@ -1872,8 +1878,8 @@ document.addEventListener("DOMContentLoaded", function (event) {
                         var polledPlayerImages = timelineAttachmentImageUrls(m.file);
                         var polledPlayerTimestamp = m.createdAt || m.timestamp || null;
                         appendLiveTimelineDateDivider(polledPlayerTimestamp);
-                        rememberTimelineItem("player", m.content, polledPlayerImages, m.id, polledPlayerTimestamp);
-                        appendMessage("player", m.content, polledPlayerTimestamp, polledPlayerImages, m.id);
+                        var polledPlayerItem = rememberTimelineItem("player", m.content, polledPlayerImages, m.id, polledPlayerTimestamp);
+                        appendMessage("player", m.content, polledPlayerTimestamp, polledPlayerImages, m.id, null, polledPlayerItem.ref);
                     }
                     lastMsgId = m.id;
                     appendedAny = true;
@@ -1901,10 +1907,91 @@ document.addEventListener("DOMContentLoaded", function (event) {
         return data.id;
     }
 
-    async function sendMessage() {
+    // 当前在途的发送请求：停止输出时据此调用 MSK abort 并回滚本地气泡。
+    var activeSend = null;
+    var stopReplyBtn = document.getElementById("stopReplyBtn");
+
+    function setStopAvailable(available) {
+        if (!stopReplyBtn) return;
+        stopReplyBtn.hidden = !available;
+        stopReplyBtn.disabled = false;
+        if (waitImg) waitImg.classList.toggle("has-stop", available);
+    }
+
+    function removeTimelineItem(item) {
+        var index = timelineRenderedItems.indexOf(item);
+        if (index !== -1) timelineRenderedItems.splice(index, 1);
+        if (!item || !item.ref) return;
+        var selector = 'li[data-msg-ref="' + item.ref + '"]';
+        aliyaText.querySelectorAll(selector).forEach(function(li) {
+            var meta = li.nextElementSibling;
+            if (meta && meta.classList.contains("message-meta")) meta.remove();
+            li.remove();
+        });
+    }
+
+    function appendChatNotice(failure, options) {
+        if (!window.AliyaChatUI) {
+            appendMessage("aliya", (failure && failure.title) || "请求失败", new Date().toISOString());
+            return;
+        }
+        renderTarget.appendChild(window.AliyaChatUI.buildNoticeCard(failure, options));
+        if (isAtBottomFlag) aliyaText.scrollTop = aliyaText.scrollHeight;
+    }
+
+    function restoreDraft(text) {
+        if (!text || playerInput.value.trim()) return;
+        playerInput.value = text;
+    }
+
+    async function stopReply() {
+        var send = activeSend;
+        if (!send || send.stopping) return;
+        send.stopping = true;
+        if (stopReplyBtn) stopReplyBtn.disabled = true;
+        setWaiting(true, "正在停止...");
+        var aborted = true;
+        try {
+            // 直连 MSK：/api/chat 在代理端同步阻塞到生成结束，经代理转发的中断请求可能排在它后面。
+            var res = await fetch(MSK_ORIGIN + "/api/agents/messages/abort", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ i: mskToken, sessionId: send.sessionId, clientRequestId: send.clientRequestId })
+            });
+            var data = await res.json().catch(function() { return {}; });
+            if (!res.ok) throw new Error((data.error && data.error.message) || ("HTTP " + res.status));
+            aborted = data.aborted !== false;
+        } catch (err) {
+            console.log("停止输出失败：", err);
+            // 中断接口本身失败时服务端可能已生成完毕，保持等待让回复正常落地。
+            send.stopping = false;
+            if (activeSend === send) {
+                setWaiting(true, "正在等待 Aliya 回复...");
+                setStopAvailable(true);
+            }
+            if (window.AliyaChatUI) window.AliyaChatUI.toast("停止失败：" + err.message, "error");
+            return;
+        }
+        if (!aborted) {
+            // 生成已结束，回复即将返回，不回滚。
+            send.stopping = false;
+            if (activeSend === send) setWaiting(true, "回复已生成，正在接收...");
+            return;
+        }
+        send.aborted = true;
+        if (send.controller) send.controller.abort();
+        removeTimelineItem(send.playerItem);
+        restoreDraft(send.content);
+        if (window.AliyaChatUI) window.AliyaChatUI.toast("已停止输出，消息已撤回到输入框");
+    }
+
+    if (stopReplyBtn) stopReplyBtn.addEventListener("click", stopReply);
+
+    async function sendMessage(retryPayload) {
         if (sendInFlight) return;
-        var content = playerInput.value.trim();
-        var file = imageInput && imageInput.files && imageInput.files[0];
+        var isRetry = !!(retryPayload && typeof retryPayload === "object" && "content" in retryPayload);
+        var content = isRetry ? retryPayload.content : playerInput.value.trim();
+        var file = isRetry ? retryPayload.file : (imageInput && imageInput.files && imageInput.files[0]);
         if (!content && !file) return;
         // 纯图片消息只显示媒体卡片，和 MSK 原生聊天保持一致。
         var displayContent = content;
@@ -1913,21 +2000,36 @@ document.addEventListener("DOMContentLoaded", function (event) {
         var localPreviewImages = file ? [URL.createObjectURL(file)] : [];
         var clientRequestId = (typeof crypto !== "undefined" && crypto.randomUUID) ? crypto.randomUUID() : String(Date.now()) + Math.random().toString(36).slice(2);
         appendLiveTimelineDateDivider(playerTimestamp);
-        appendMessage("player", displayContent, playerTimestamp, localPreviewImages);
-        rememberTimelineItem("player", displayContent, localPreviewImages, null, playerTimestamp);
-        playerInput.value = "";
-        if (imageInput) {
+        var playerItem = rememberTimelineItem("player", displayContent, localPreviewImages, null, playerTimestamp);
+        appendMessage("player", displayContent, playerTimestamp, localPreviewImages, null, null, playerItem.ref);
+        if (!isRetry || playerInput.value.trim() === content) playerInput.value = "";
+        if (imageInput && !isRetry) {
             imageInput.value = "";
             syncMediaUploadState();
         }
         setWaiting(true, file ? "正在上传图片..." : "正在发送...");
         recentlySentSet[displayContent] = true;
         sendInFlight = true;
+        var send = {
+            clientRequestId: clientRequestId,
+            sessionId: targetSessionId,
+            content: content,
+            file: file || null,
+            playerItem: playerItem,
+            controller: null,
+            aborted: false,
+            stopping: false
+        };
+        activeSend = send;
+        var retry = function() { void sendMessage({ content: content, file: file || null }); };
         try {
             await opWaitForPendingConfigSaves();
             var fileId = file ? await uploadSelectedImage(file) : null;
+            if (send.aborted) return;
             setWaiting(true, "正在等待 Aliya 回复...");
+            setStopAvailable(true);
             var controller = new AbortController();
+            send.controller = controller;
             var timeoutId = setTimeout(function() { controller.abort(); }, 125000);
             var res = await fetch(API_BASE + "/api/chat", {
                 method: "POST",
@@ -1938,16 +2040,27 @@ document.addEventListener("DOMContentLoaded", function (event) {
             clearTimeout(timeoutId);
             var data = await res.json();
             if (await guardAuthResponse(res, data)) { return; }
+            if (send.aborted) return;
+            if (data.status === "aborted") {
+                removeTimelineItem(playerItem);
+                restoreDraft(content);
+                return;
+            }
             if (data.status === "success" && data.assistant_message !== undefined) {
                 var rawText = data.assistant_message;
                 var msgId = data.assistant_message_id;
+                if (data.user_message_id) {
+                    playerItem.id = data.user_message_id;
+                    aliyaText.querySelectorAll('li[data-msg-ref="' + playerItem.ref + '"]').forEach(function(li, index) {
+                        if (index === 0) li.setAttribute("data-message-id", data.user_message_id);
+                    });
+                }
                 // 关键：在 await 图片处理之前就标记消息 id。
                 // processDrawingInstruction 内部会 await fetchPlaceholderImage（网络请求，耗时），
                 // 若等到 await 完成后才标记 id，则 await 期间 poll 拉到同一条消息时 id 尚未标记，
                 // 两条路径都在"检查通过但尚未标记"的窗口期内，导致带生图的消息被重复渲染。
                 markReceivedId(msgId);
-                // 恢复稳定版逻辑：不再依赖 timelineSnapshotMessageIds 这种复杂的快照比对。
-                // 只要后端返回了，我们就直接渲染。如果 poll 抢先拉到了，poll 里的 recentlyReceivedSet 会跳过它。
+                // 只要后端返回了就直接渲染；如果 poll 抢先拉到了，poll 里的 recentlyReceivedSet 会跳过它。
                 var processed = await processDrawingInstruction(rawText, msgId);
                 var hrResult = processHeartRateInstruction(processed.text);
                 if (!hrResult.matched) {
@@ -1961,19 +2074,20 @@ document.addEventListener("DOMContentLoaded", function (event) {
                     proactiveScheduleControlFailed: data.proactive_schedule_control_failed === true
                 };
                 appendLiveTimelineDateDivider(assistantTimestamp);
-                rememberTimelineItem(
+                var assistantItem = rememberTimelineItem(
                     "aliya",
                     hrResult.text,
                     processed.images,
                     msgId,
                     assistantTimestamp,
                     assistantMeta.proactiveScheduleActionTypes,
-                    assistantMeta.proactiveScheduleControlFailed
+                    assistantMeta.proactiveScheduleControlFailed,
+                    rawText
                 );
                 // 渲染检查只看 content（poll 渲染时会标记 content），不看 id。
                 // id 是本条 sendMessage 自己提前标记的（用于挡 poll），若此处检查 id 会把自己的渲染也挡掉。
                 if (!recentlyReceivedSet[rawText]) {
-                    renderAliyaMessage(hrResult.text, processed.images, false, assistantMeta, msgId);
+                    renderAliyaMessage(hrResult.text, processed.images, false, assistantMeta, msgId, assistantItem.ref);
                 }
                 // 防重标记：分段输出开启时，Misskey 时间线会把一条回复拆成多条独立消息，
                 // 而 /api/chat 同步返回的 rawText 是合并文本。两者 content 对不上会导致 poll 重复渲染。
@@ -1987,26 +2101,36 @@ document.addEventListener("DOMContentLoaded", function (event) {
                     recentlyReceivedSet[key] = true;
                     setTimeout(function () { delete recentlyReceivedSet[key]; }, 300000);
                 });
+            } else if (data.status === "error" && data.maybe_delivered) {
+                appendChatNotice({ title: "连接中断", message: data.reply }, { type: "info" });
             } else if (data.status === "error") {
-                var errorReply = data.reply || data.error || "通信故障，请稍后再试";
-                var errorTimestamp = new Date().toISOString();
-                appendLiveTimelineDateDivider(errorTimestamp);
-                rememberTimelineItem("aliya", errorReply, [], null, errorTimestamp);
-                appendMessage("aliya", errorReply, errorTimestamp);
+                // MSK 在模型失败、审核拦截、封禁时都不会保留这条用户消息，本地同步撤回。
+                removeTimelineItem(playerItem);
+                var failure = data.failure || { title: data.reply || data.error || "通信故障，请稍后再试", retryable: !data.session_banned && !data.audit_blocked };
+                if (data.audit_blocked || data.session_banned) {
+                    failure = { title: data.audit_blocked ? "消息被内容审核拦截" : "无法继续对话", message: data.reply, retryable: false };
+                }
+                restoreDraft(content);
+                appendChatNotice(failure, { onRetry: failure.retryable === false ? null : retry });
+            } else if (!res.ok) {
+                // 代理层拒绝（上一条仍在处理、参数错误等），消息未发出。
+                removeTimelineItem(playerItem);
+                restoreDraft(content);
+                appendChatNotice({ title: data.error || ("请求失败（HTTP " + res.status + "）") }, { type: "info", onRetry: retry });
             }
         } catch (err) {
+            if (send.aborted) return;
             console.log("发送消息失败：", err);
             // 走到这里时请求体通常已发出（切后台断连、等待超时等），消息大概率已送达 Misskey，
             // 提示用户回复会自动出现，避免误以为发送失败而重复发送。
             var failureTip = err && err.name === "AbortError"
                 ? "连接中断（可能切到了后台或等待超时）。消息大概率已发出，Aliya 回复后会自动显示，无需重发。"
                 : "网络波动导致请求中断。消息大概率已发出，Aliya 回复后会自动显示，请勿重复发送。";
-            var failureTimestamp = new Date().toISOString();
-            appendLiveTimelineDateDivider(failureTimestamp);
-            rememberTimelineItem("aliya", failureTip, [], null, failureTimestamp);
-            appendMessage("aliya", failureTip, failureTimestamp);
+            appendChatNotice({ title: "连接中断", message: failureTip }, { type: "info" });
         } finally {
+            if (activeSend === send) activeSend = null;
             sendInFlight = false;
+            setStopAvailable(false);
             setWaiting(false);
             // 不能立即删除防重标记：服务端时间线缓存会延迟 poll 看到本条消息，
             // 正常由 poll 跳过分支删除，这里仅做兜底清理。
@@ -2016,9 +2140,143 @@ document.addEventListener("DOMContentLoaded", function (event) {
         }
     }
 
-    sendBtn.addEventListener("click", sendMessage);
+    // ==================== 消息操作菜单 ====================
+    function findTimelineItemByRef(ref) {
+        for (var i = 0; i < timelineRenderedItems.length; i++) {
+            if (timelineRenderedItems[i].ref === ref) return timelineRenderedItems[i];
+        }
+        return null;
+    }
+
+    async function postMessageAction(payload) {
+        var res = await fetch(API_BASE + "/api/conversation", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: makeBody(Object.assign({ session_id: currentSessionId }, payload))
+        });
+        var data = await res.json();
+        if (await guardAuthResponse(res, data)) return null;
+        if (!res.ok || data.error) throw new Error(data.error || "操作失败");
+        return data.data || {};
+    }
+
+    function stripHeartRateInstruction(text) {
+        return String(text || "").replace(/\[\[heart_rate:\s*\d+\s*,\s*\d+\s*\]\]/g, "").trim();
+    }
+
+    async function editTimelineItem(item) {
+        var ui = window.AliyaChatUI;
+        var next = await ui.dialog({
+            title: item.role === "player" ? "编辑我的消息" : "编辑 Aliya 的回复",
+            message: "只修改这条消息的内容，不会重新生成回复。",
+            input: item.raw || item.content || "",
+            confirmText: "保存"
+        });
+        if (next == null) return;
+        if (!next.trim() && !(item.role === "player" && item.images && item.images.length)) {
+            ui.toast("消息内容不能为空", "error");
+            return;
+        }
+        if (next === item.raw) return;
+        try {
+            var updated = await postMessageAction({ action: "edit_message", message_id: item.id, content: next });
+            if (!updated) return;
+            if (updated.auditBlocked) {
+                ui.toast("修改内容未通过审核" + (updated.auditReason ? "：" + updated.auditReason : ""), "error");
+                return;
+            }
+            var raw = typeof updated.content === "string" ? updated.content : next;
+            item.raw = raw;
+            if (item.role === "aliya") {
+                var processed = await processDrawingInstruction(raw, item.id);
+                item.content = stripHeartRateInstruction(processed.text);
+            } else {
+                item.content = raw;
+            }
+            renderPreparedTimelineMessages(timelineRenderedItems, false);
+            ui.toast("消息已更新");
+        } catch (err) {
+            ui.toast(err.message, "error");
+        }
+    }
+
+    async function rollbackToTimelineItem(item) {
+        var ui = window.AliyaChatUI;
+        var ok = await ui.dialog({
+            title: "回溯到这条消息",
+            message: "这条消息以及之后的所有对话都会被删除，消息内容会放回输入框，便于修改后重新发送。此操作无法撤销。",
+            confirmText: "回溯",
+            danger: true
+        });
+        if (!ok) return;
+        try {
+            var result = await postMessageAction({ action: "rollback", message_id: item.id });
+            if (!result) return;
+            var index = timelineRenderedItems.indexOf(item);
+            if (index !== -1) timelineRenderedItems.splice(index);
+            renderPreparedTimelineMessages(timelineRenderedItems, true);
+            playerInput.value = typeof result.content === "string" ? result.content : (item.raw || item.content || "");
+            playerInput.focus();
+            ui.toast("已回溯，可修改后重新发送");
+        } catch (err) {
+            ui.toast(err.message, "error");
+        }
+    }
+
+    async function deleteTimelineItem(item) {
+        var ui = window.AliyaChatUI;
+        var ok = await ui.dialog({
+            title: "删除消息",
+            message: "删除后无法恢复，Aliya 也不会再记得这条消息。",
+            confirmText: "删除",
+            danger: true
+        });
+        if (!ok) return;
+        try {
+            var result = await postMessageAction({ action: "delete_message", message_id: item.id });
+            if (!result) return;
+            var index = timelineRenderedItems.indexOf(item);
+            if (index !== -1) timelineRenderedItems.splice(index, 1);
+            renderPreparedTimelineMessages(timelineRenderedItems, false);
+            ui.toast("消息已删除");
+        } catch (err) {
+            ui.toast(err.message, "error");
+        }
+    }
+
+    function messageMenuItems(li) {
+        var ui = window.AliyaChatUI;
+        var item = findTimelineItemByRef(li.getAttribute("data-msg-ref"));
+        if (!item) return [];
+        var items = [];
+        var copySource = item.content || "";
+        if (copySource) {
+            items.push({ label: "复制", icon: "⧉", action: function() {
+                ui.copyText(copySource).then(function(ok) { ui.toast(ok ? "已复制" : "复制失败", ok ? null : "error"); });
+            } });
+        }
+        // 没有 MSK 消息 ID（发送中、本地提示）或回复生成期间不允许改动时间线。
+        var editable = !!item.id && !sendInFlight;
+        if (editable) {
+            items.push({ label: "编辑", icon: "✎", action: function() { void editTimelineItem(item); } });
+            if (item.role === "player") {
+                items.push({ label: "回溯到此处", icon: "↶", action: function() { void rollbackToTimelineItem(item); } });
+            }
+            items.push("divider");
+            items.push({ label: "删除", icon: "🗑", danger: true, action: function() { void deleteTimelineItem(item); } });
+        }
+        return items;
+    }
+
+    if (window.AliyaChatUI) window.AliyaChatUI.bindMessageMenu(aliyaText, messageMenuItems);
+
+    sendBtn.addEventListener("click", function() { void sendMessage(); });
+    playerInput.addEventListener("focus", function() {
+        if (!isAtBottomFlag) return;
+        setTimeout(function() { aliyaText.scrollTop = aliyaText.scrollHeight; }, 280);
+    });
     playerInput.addEventListener("keydown", function (e) {
-        if (e.key === "Enter" && (e.ctrlKey || e.shiftKey)) { e.preventDefault(); sendMessage(); }
+        if (e.key === "Enter" && (e.ctrlKey || e.shiftKey)) { e.preventDefault(); void sendMessage(); }
     });
 
     // ==================== 设置面板 ====================
@@ -2203,7 +2461,13 @@ document.addEventListener("DOMContentLoaded", function (event) {
         });
         if (opSubnav) {
             opSubnav.querySelectorAll("[data-op-target]").forEach(function(btn) {
-                btn.classList.toggle("active", btn.getAttribute("data-op-target") === opCurrentPage);
+                var isActive = btn.getAttribute("data-op-target") === opCurrentPage;
+                btn.classList.toggle("active", isActive);
+                btn.setAttribute("aria-selected", isActive ? "true" : "false");
+                if (isActive && opSubnav.scrollWidth > opSubnav.clientWidth) {
+                    var left = btn.offsetLeft - (opSubnav.clientWidth - btn.offsetWidth) / 2;
+                    opSubnav.scrollTo({ left: Math.max(0, left), behavior: "smooth" });
+                }
             });
         }
         if (isEmbedPage) {
@@ -2415,7 +2679,7 @@ document.addEventListener("DOMContentLoaded", function (event) {
         return {
             colorScheme: "dark",
             accent: "#e6a15a",
-            background: "#2d2d2d",
+            background: "#262626",
             panel: "#3a3a3a",
             foreground: "#f2ede7",
             muted: "#b9b2a9",
@@ -2852,9 +3116,29 @@ document.addEventListener("DOMContentLoaded", function (event) {
         }
     }
 
+    // 抽屉入场动画结束后加 is-open：摘掉 CSS 动画，拖拽与回弹才能写行内 transform。
+    var opDrawerOpenTimer = null;
+    function opResetDrawerTransform() {
+        opOverlay.classList.remove("is-open", "is-settling");
+        opPanel.style.transform = "";
+        opPanel.style.removeProperty("--drawer-drag");
+    }
+
+    function opMarkDrawerOpen() {
+        if (opDrawerOpenTimer) clearTimeout(opDrawerOpenTimer);
+        opDrawerOpenTimer = setTimeout(function() {
+            opDrawerOpenTimer = null;
+            if (opOverlay.classList.contains("active") && !opOverlay.classList.contains("is-closing")) {
+                opOverlay.classList.add("is-open");
+            }
+        }, 400);
+    }
+
     async function opOpenPanel() {
         opOverlay.classList.remove("is-closing");
+        opResetDrawerTransform();
         opOverlay.classList.add("active");
+        opMarkDrawerOpen();
         opShowStatus("");
         var hasCurrentConfig = !!opConfigLoadedSessionId && opConfigLoadedSessionId === (opCurrentSessionId || currentSessionId);
         opSetInitialLoading(!hasCurrentConfig);
@@ -2874,8 +3158,61 @@ document.addEventListener("DOMContentLoaded", function (event) {
     }
 
     function opClosePanel() {
-        closeOverlayAnimated(opOverlay, opDestroyAgentControl);
+        if (opDrawerOpenTimer) {
+            clearTimeout(opDrawerOpenTimer);
+            opDrawerOpenTimer = null;
+        }
+        closeOverlayAnimated(opOverlay, function() {
+            opResetDrawerTransform();
+            opDestroyAgentControl();
+        });
     }
+
+    // 移动端底部抽屉：按住顶部把手/标题栏下拉关闭。iframe 内的手势不会传到这里，不影响控制台滚动。
+    (function bindDrawerSwipe() {
+        if (!document.documentElement.classList.contains("is-mobile")) return;
+        var zones = [document.getElementById("opDrawerHandle"), opPanel.querySelector(".op-drawer-header")].filter(Boolean);
+        var startY = 0;
+        var startTime = 0;
+        var dragY = 0;
+        var dragging = false;
+        function onDown(e) {
+            if (!opOverlay.classList.contains("is-open") || e.button > 0) return;
+            if (e.target.closest && e.target.closest("button")) return;
+            dragging = true;
+            startY = e.clientY;
+            startTime = performance.now();
+            dragY = 0;
+            opOverlay.classList.remove("is-settling");
+            if (e.currentTarget.setPointerCapture) e.currentTarget.setPointerCapture(e.pointerId);
+        }
+        function onMove(e) {
+            if (!dragging) return;
+            dragY = Math.max(0, e.clientY - startY);
+            opPanel.style.transform = "translateY(" + dragY + "px)";
+        }
+        function onUp() {
+            if (!dragging) return;
+            dragging = false;
+            var velocity = dragY / Math.max(1, performance.now() - startTime);
+            if (dragY > Math.min(160, opPanel.offsetHeight * 0.25) || (dragY > 24 && velocity > 0.6)) {
+                // 退场动画从当前拖拽位置继续下滑
+                opPanel.style.setProperty("--drawer-drag", dragY + "px");
+                opPanel.style.transform = "";
+                opClosePanel();
+                return;
+            }
+            opOverlay.classList.add("is-settling");
+            opPanel.style.transform = "";
+            setTimeout(function() { opOverlay.classList.remove("is-settling"); }, 300);
+        }
+        zones.forEach(function(zone) {
+            zone.addEventListener("pointerdown", onDown);
+            zone.addEventListener("pointermove", onMove);
+            zone.addEventListener("pointerup", onUp);
+            zone.addEventListener("pointercancel", onUp);
+        });
+    })();
 
     operationBtn.addEventListener("click", opOpenPanel);
     document.addEventListener("keydown", function(e) {

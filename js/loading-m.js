@@ -2,7 +2,6 @@ document.addEventListener("DOMContentLoaded", function (event) {
     const canvas = document.getElementById('warpCanvas');
     const ctx = canvas.getContext('2d');
     let animationFrame;
-    const reduceMotionQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
 
     const MAX_STAR_COUNT = 400;
     let stars = [];
@@ -80,7 +79,7 @@ document.addEventListener("DOMContentLoaded", function (event) {
     }
 
     function animate(timestamp) {
-        if (!isAnimating || document.hidden || reduceMotionQuery.matches) {
+        if (!isAnimating || document.hidden) {
             stopWarpAnimation();
             return;
         }
@@ -111,13 +110,11 @@ document.addEventListener("DOMContentLoaded", function (event) {
         mainContent.style.display = 'none';
         animContainer.style.opacity = '1';
         resizeCanvas();
-        if (!reduceMotionQuery.matches) {
-            initStars();
-            isAnimating = true;
-            animate();
-        }
+        initStars();
+        isAnimating = true;
+        animate();
 
-        await new Promise(r => setTimeout(r, reduceMotionQuery.matches ? 0 : 1000));
+        await new Promise(r => setTimeout(r, 1000));
 
         animContainer.style.transition = 'opacity 2s ease-out';
         animContainer.style.opacity = '0';

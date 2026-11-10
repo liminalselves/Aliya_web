@@ -889,6 +889,17 @@ def chat():
                 "audit_category": category,
                 "audit_reason": reason,
             })
+        if isinstance(result, dict) and result.get("aborted"):
+            return jsonify({"status": "aborted", "client_request_id": client_request_id})
+        if isinstance(result, dict) and result.get("failure"):
+            failure = result["failure"]
+            if failure.get("code") == "AGENTS_LLM_ABORTED":
+                return jsonify({"status": "aborted", "client_request_id": client_request_id})
+            return jsonify({
+                "status": "error",
+                "reply": failure.get("title") or "请求失败",
+                "failure": failure,
+            })
         if isinstance(result, dict) and result.get("error"):
             return jsonify({
                 "status": "error",
@@ -900,6 +911,7 @@ def chat():
                 "reply": "消息已发送并收到回复",
                 "assistant_message": result["text"],
                 "assistant_message_id": result.get("messageId"),
+                "user_message_id": result.get("userMessageId"),
                 "client_request_id": result.get("client_request_id"),
                 "image_recognition_status": result.get("imageRecognitionStatus"),
                 "image_recognition_description": result.get("imageRecognitionDescription"),
@@ -914,7 +926,8 @@ def chat():
         else:
             return jsonify({
                 "status": "error",
-                "reply": "与 Misskey 的连接中断，消息可能已送达。Aliya 回复后会自动显示，请勿重复发送。"
+                "reply": "与 Misskey 的连接中断，消息可能已送达。Aliya 回复后会自动显示，请勿重复发送。",
+                "maybe_delivered": True,
             }), 500
     finally:
         _chat_exit(token)
@@ -973,6 +986,12 @@ def conversation():
         return subscribe_style(data, token)
     elif action == "rule_list":
         return list_session_rules(data, token)
+    elif action == "rollback":
+        return rollback_message(data, token)
+    elif action == "edit_message":
+        return edit_message(data, token)
+    elif action == "delete_message":
+        return delete_message(data, token)
     else:
         return jsonify({"error": "不支持的操作，请使用 create 或 update"}), 400
 
@@ -1346,6 +1365,54 @@ def delete_session(data, token):
         logging.error(f"删除会话异常: {e}")
         return jsonify({"error": str(e)}), 500
 
+def _message_action(data, token, endpoint, label, extra=None):
+    """消息级操作（回溯/编辑/删除）的统一代理：成功后让时间线缓存失效。"""
+    try:
+        session_id = _current_or_requested_session_id(data, token)
+        payload = {"sessionId": session_id}
+        payload.update(extra or {})
+        result = _misskey_api_post(token, endpoint, payload)
+        _invalidate_metadata(_timeline_cache_namespace(session_id), token)
+        return jsonify({"status": "success", "data": result}), 200
+    except PermissionError as e:
+        return jsonify({"error": str(e)}), 403
+    except requests.exceptions.HTTPError as e:
+        status = e.response.status_code if e.response is not None else 500
+        failure = _misskey_error_payload(e.response)
+        logging.error(f"{label}失败 {status}: {e.response.text[:200] if e.response is not None else e}")
+        message = failure.get("title") if failure and failure.get("code") in _MSK_ERROR_TITLES else None
+        if not message and failure and failure.get("message"):
+            message = failure["message"]
+        return jsonify({"error": f"{label}失败：{message or status}", "failure": failure}), status
+    except Exception as e:
+        logging.error(f"{label}异常: {e}")
+        return jsonify({"error": f"{label}失败：{e}"}), 500
+
+
+def rollback_message(data, token):
+    message_id = _string_from_json(data, "message_id", 64)
+    if not message_id:
+        return jsonify({"error": "缺少 message_id"}), 400
+    return _message_action(data, token, "agents/messages/rollback", "回溯消息", {"messageId": message_id})
+
+
+def edit_message(data, token):
+    message_id = _string_from_json(data, "message_id", 64)
+    content = data.get("content")
+    if not message_id or not isinstance(content, str):
+        return jsonify({"error": "缺少 message_id 或 content"}), 400
+    if len(content) > 16000:
+        return jsonify({"error": "消息不能超过 16000 字符"}), 400
+    return _message_action(data, token, "agents/messages/update", "编辑消息", {"messageId": message_id, "content": content})
+
+
+def delete_message(data, token):
+    message_id = _string_from_json(data, "message_id", 64)
+    if not message_id:
+        return jsonify({"error": "缺少 message_id"}), 400
+    return _message_action(data, token, "agents/messages/delete", "删除消息", {"messageId": message_id})
+
+
 def list_usable(token):
     """获取可用文风列表"""
     url = f"{MSK_ORIGIN}/api/agents/styles/list-usable"
@@ -1653,6 +1720,66 @@ def _verify_message_delivered(token, session_id, text, attempts=4, interval=4):
     return False
 
 
+_MSK_ERROR_TITLES = {
+    "AGENTS_LLM_FAILED": "模型调用失败",
+    "AGENTS_LLM_TIMEOUT": "模型响应超时",
+    "AGENTS_LLM_UNSAFE_URL": "模型地址未通过安全校验",
+    "AGENTS_MODEL_NOT_CONFIGURED": "当前会话还没有配置模型",
+    "AGENTS_MODEL_UNAVAILABLE": "所选模型已不可用，请在 Operation → 模型 中重新选择",
+    "AGENTS_CONTEXT_BUDGET_EXCEEDED": "系统提示与本次输入超出上下文预算",
+    "AGENT_INSUFFICIENT_CREDIT": "余额不足，无法完成本次调用",
+    "AGENT_REPLY_PENDING": "上一条回复仍在生成中",
+    "AGENT_DIALOGUE_STYLE_REQUIRED": "请先在 Operation → 文风 中选择文风",
+    "STYLE_NOT_AVAILABLE": "会话使用的文风已下架，请重新选择文风",
+    "AGENT_REGEX_FILTER_TIMEOUT": "角色正则过滤超时",
+    "RATE_LIMIT_EXCEEDED": "请求过于频繁，请稍后再试",
+}
+# 配置类错误重试无意义，前端不显示「重试」。
+_MSK_ERROR_NOT_RETRYABLE = {
+    "AGENTS_LLM_UNSAFE_URL",
+    "AGENTS_MODEL_NOT_CONFIGURED",
+    "AGENTS_MODEL_UNAVAILABLE",
+    "AGENT_DIALOGUE_STYLE_REQUIRED",
+    "STYLE_NOT_AVAILABLE",
+    "AGENT_INSUFFICIENT_CREDIT",
+}
+
+
+def _misskey_error_payload(resp):
+    """把 MSK API 错误响应整理为前端可展示的结构；无法解析时返回 None。"""
+    if resp is None:
+        return None
+    try:
+        body = resp.json()
+    except ValueError:
+        return None
+    err = body.get("error") if isinstance(body, dict) else None
+    if not isinstance(err, dict):
+        return None
+    code = err.get("code") if isinstance(err.get("code"), str) else None
+    info = err.get("info") if isinstance(err.get("info"), dict) else {}
+    attempts = []
+    for raw in info.get("attempts") or []:
+        if isinstance(raw, dict) and isinstance(raw.get("code"), str):
+            attempts.append({
+                "index": raw.get("index"),
+                "code": raw.get("code"),
+                "reason": raw.get("reason") if isinstance(raw.get("reason"), str) else None,
+                "status": raw.get("status") if isinstance(raw.get("status"), int) else None,
+                "detail": raw.get("detail") if isinstance(raw.get("detail"), str) else None,
+            })
+    return {
+        "code": code,
+        "title": _MSK_ERROR_TITLES.get(code) or "请求失败",
+        "message": err.get("message") if isinstance(err.get("message"), str) else None,
+        "reason": info.get("reason") if isinstance(info.get("reason"), str) else None,
+        "status": info.get("status") if isinstance(info.get("status"), int) else resp.status_code,
+        "detail": info.get("detail") if isinstance(info.get("detail"), str) else None,
+        "attempts": attempts,
+        "retryable": code not in _MSK_ERROR_NOT_RETRYABLE,
+    }
+
+
 def _send_to_misskey(text, token, file_id=None, session_id=None, client_request_id=None):
     """通过 Misskey HTTP API 发送消息，并直接解析同步返回的response"""
     try:
@@ -1700,6 +1827,10 @@ def _send_to_misskey(text, token, file_id=None, session_id=None, client_request_
                     logging.warning(f"消息被审核拦截: category={audit_category}, reason={audit_reason}")
                     _invalidate_metadata(_timeline_cache_namespace(session_id), token)
                     return {"audit_blocked": True, "auditCategory": audit_category, "auditReason": audit_reason}
+                # 用户在生成途中调用 abort：MSK 已回滚用户消息，不产生回复。
+                if data.get("aborted") is True:
+                    logging.info(">>> 本次生成已被用户中断")
+                    return {"aborted": True}
                 assistant_text = data.get("assistantText")
                 assistant_msg_id = data.get("assistantMessageId") # 提取消息 ID
                 metadata = {
@@ -1708,13 +1839,14 @@ def _send_to_misskey(text, token, file_id=None, session_id=None, client_request_
                     "proactive_schedule_action_types": data.get("proactiveScheduleActionTypes", []),
                     "proactive_schedule_control_failed": data.get("proactiveScheduleControlFailed", False),
                 }
+                user_msg_id = data.get("userMessageId")
                 if assistant_text:
                     logging.info("<<< 已收到 Misskey 同步回复")
                     _add_message("aliya", assistant_text, msk_msg_id=assistant_msg_id, token=token, metadata=metadata, session_id=session_id)
-                    return {"text": assistant_text, "messageId": assistant_msg_id, "client_request_id": client_request_id, **metadata}
+                    return {"text": assistant_text, "messageId": assistant_msg_id, "userMessageId": user_msg_id, "client_request_id": client_request_id, **metadata}
                 else:
                     logging.warning("API 返回成功，但未找到 assistantText 字段")
-                    return {"text": "", "messageId": assistant_msg_id, "client_request_id": client_request_id, **metadata}
+                    return {"text": "", "messageId": assistant_msg_id, "userMessageId": user_msg_id, "client_request_id": client_request_id, **metadata}
             except ValueError:
                 logging.error("API 返回的不是有效的 JSON 格式")
                 return True
@@ -1751,8 +1883,13 @@ def _send_to_misskey(text, token, file_id=None, session_id=None, client_request_
                     logging.info(">>> 消息已确认送达 Misskey（网关回执丢失），等待轮询获取回复")
                     return True
                 logging.error(">>> 消息送达验证失败，判定为发送失败")
-            else:
-                logging.error(f"Misskey API 返回异常 {resp.status_code}: {resp.text[:200]}")
+                return False
+            # 其余状态码（模型调用失败、余额不足、回复生成中等）：MSK 已撤销本条用户消息，
+            # 把结构化错误交给前端展示，并允许用户重试。
+            logging.error(f"Misskey API 返回异常 {resp.status_code}: {resp.text[:200]}")
+            failure = _misskey_error_payload(resp)
+            if failure:
+                return {"failure": failure}
             return False
     except requests.exceptions.Timeout:
         logging.error("发送到 Misskey 超时")
