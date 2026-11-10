@@ -39,29 +39,29 @@
 .op-drawer {
     position: absolute;
     top: 0;
-    right: 0;
+    left: 0;
     bottom: 0;
     width: min(960px, 72vw);
     min-width: min(640px, 100vw);
     display: flex;
     flex-direction: column;
     background: var(--ui-bg);
-    border-left: 1px solid var(--ui-border);
-    box-shadow: -18px 0 48px rgba(0, 0, 0, 0.45);
+    border-right: 1px solid var(--ui-border);
+    box-shadow: 18px 0 48px rgba(0, 0, 0, 0.45);
     color: var(--ui-text);
     font-size: 14px;
     box-sizing: border-box;
     will-change: transform;
 }
 .op-overlay.active > .op-drawer {
-    animation: drawer-in-right 0.36s var(--ui-ease-out) both;
+    animation: drawer-in-left 0.36s var(--ui-ease-out) both;
 }
 /* 入场结束后摘掉动画，拖拽/回弹才能用行内 transform；退场选择器必须写在其后以覆盖 */
 .op-overlay.active.is-open > .op-drawer {
     animation: none;
 }
 .op-overlay.active.is-closing > .op-drawer {
-    animation: drawer-out-right 0.24s var(--ui-ease-in) both;
+    animation: drawer-out-left 0.24s var(--ui-ease-in) both;
 }
 
 .op-drawer-handle {
@@ -196,7 +196,9 @@
     padding: 10px 10px 0;
 }
 
-/* msk 托管控制台：iframe 自身为唯一滚动容器（滚轮事件不会透出 iframe）。高度撑满抽屉正文。 */
+/* msk 托管控制台：iframe 自身为唯一滚动容器（滚轮事件不会透出 iframe）。高度撑满抽屉正文。
+ * 一个会话只保留一个 iframe：鉴权完成前隐身（远端先渲染 msk 默认主题，不能露出来），
+ * 就绪后淡入；页签切换走 iframe 内部路由，宿主只给内容区一次淡入盖住硬切。 */
 .op-drawer .op-agent-control {
     flex: 1 1 auto;
     min-height: 0;
@@ -204,6 +206,12 @@
     display: flex;
     flex-direction: column;
     position: relative;
+    border-radius: 10px;
+    background: var(--ui-bg);
+    overflow: hidden;
+}
+.op-drawer .op-agent-control.swap {
+    animation: drawer-page-in 0.24s var(--ui-ease-out) both;
 }
 .op-drawer .op-agent-control > iframe {
     flex: 1 1 auto;
@@ -212,8 +220,18 @@
     min-height: 0;
     border: 0;
     display: block;
-    border-radius: 10px;
     background: var(--ui-bg);
+    opacity: 0;
+    transition: opacity 0.24s ease-out;
+}
+.op-drawer .op-agent-control > iframe.ready {
+    opacity: 1;
+}
+.op-agent-control-placeholder {
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+    display: flex;
 }
 .op-drawer .op-agent-control-loading,
 .op-drawer .op-agent-control-empty {
@@ -407,7 +425,7 @@ html.is-mobile .op-drawer {
     min-width: 0;
     /* 顶部预留状态栏/刘海，抽屉几乎占满屏幕以容纳控制台 */
     height: calc(100% - var(--ui-safe-top) - 28px);
-    border-left: 0;
+    border-right: 0;
     border-top: 1px solid var(--ui-border);
     border-radius: 18px 18px 0 0;
     box-shadow: 0 -16px 40px rgba(0, 0, 0, 0.5);
@@ -493,7 +511,7 @@ html.is-mobile #aliyaText li[data-msg-ref] {
     -webkit-user-select: none;
     user-select: none;
 }
-html.is-mobile .op-drawer .op-agent-control > iframe {
+html.is-mobile .op-drawer .op-agent-control {
     border-radius: 10px 10px 0 0;
 }
 html.is-mobile .op-drawer .op-session-list {
@@ -519,13 +537,13 @@ html.is-mobile .op-drawer .settings-toggle-row {
     from { opacity: 1; }
     to { opacity: 0; }
 }
-@keyframes drawer-in-right {
-    from { transform: translateX(100%); }
+@keyframes drawer-in-left {
+    from { transform: translateX(-100%); }
     to { transform: translateX(0); }
 }
-@keyframes drawer-out-right {
+@keyframes drawer-out-left {
     from { transform: translateX(0); }
-    to { transform: translateX(100%); }
+    to { transform: translateX(-100%); }
 }
 @keyframes drawer-in-up {
     from { transform: translateY(100%); }

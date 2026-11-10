@@ -2384,11 +2384,8 @@ document.addEventListener("DOMContentLoaded", function (event) {
                 }
             });
         }
-        if (isEmbedPage) {
-            void opShowAgentControlPanel(opCurrentPage);
-        } else {
-            opDestroyAgentControl();
-        }
+        // 切回会话页时只隐藏控制台，保留 iframe，再切回来不必重新加载。
+        if (isEmbedPage) void opShowAgentControlPanel(opCurrentPage);
     }
 
     function opSaveSegmentedOutput(enabled) {
@@ -2568,9 +2565,10 @@ document.addEventListener("DOMContentLoaded", function (event) {
     var opAgentControlStatus = document.getElementById("opAgentControlStatus");
     var opAgentControlScriptPromise = null;
     var opAgentControl = null;
+    var opAgentControlReady = false;
     var opAgentControlPanel = "";
-    var opAgentControlPending = null;
-    var opAgentControlRevealTimer = null;
+    var opAgentControlTimeout = null;
+    var opAgentControlLoadSeq = 0;
 
     function opLoadAgentControlScript() {
         if (window.MisskeyAgentControl) return Promise.resolve();
@@ -2618,15 +2616,9 @@ document.addEventListener("DOMContentLoaded", function (event) {
     }
 
     function opDestroyAgentControl() {
-        if (opAgentControlRevealTimer) {
-            clearTimeout(opAgentControlRevealTimer);
-            opAgentControlRevealTimer = null;
-        }
-        if (opAgentControlPending) {
-            try { opAgentControlPending.destroy(); } catch (err) {
-                console.log("销毁待加载控制台失败：", err);
-            }
-            opAgentControlPending = null;
+        if (opAgentControlTimeout) {
+            clearTimeout(opAgentControlTimeout);
+            opAgentControlTimeout = null;
         }
         if (opAgentControl) {
             try { opAgentControl.destroy(); } catch (err) {
@@ -2634,78 +2626,62 @@ document.addEventListener("DOMContentLoaded", function (event) {
             }
             opAgentControl = null;
         }
+        opAgentControlReady = false;
         opAgentControlPanel = "";
         opShowAgentControlError("");
         if (opAgentControlHost) opAgentControlHost.innerHTML = "";
     }
 
-    function opStageAgentControlIframe(control) {
-        // 新 iframe 先隐身叠在旧内容上，等自身鉴权并测出内容高度后再替换，避免加载过程闪动。
-        control.iframe.style.position = "absolute";
-        control.iframe.style.top = "0";
-        control.iframe.style.left = "0";
-        control.iframe.style.visibility = "hidden";
+    // 页签切换时内容区淡入，盖住 iframe 内部路由替换的硬切。
+    function opSwapAgentControl() {
+        if (!opAgentControlHost) return;
+        opAgentControlHost.classList.remove("swap");
+        void opAgentControlHost.offsetWidth;
+        opAgentControlHost.classList.add("swap");
     }
 
-    function opRevealAgentControl(control, panel) {
-        if (opAgentControlPending !== control || opAgentControlPanel !== panel) return;
-        opAgentControlPending = null;
-        if (opAgentControlRevealTimer) {
-            clearTimeout(opAgentControlRevealTimer);
-            opAgentControlRevealTimer = null;
+    function opAgentControlPlaceholder(html) {
+        if (!opAgentControlHost) return;
+        var holder = opAgentControlHost.querySelector(".op-agent-control-placeholder");
+        if (!holder) {
+            holder = document.createElement("div");
+            holder.className = "op-agent-control-placeholder";
+            opAgentControlHost.insertBefore(holder, opAgentControlHost.firstChild);
         }
-        var old = opAgentControl;
-        opAgentControl = control;
-        if (opAgentControlHost) {
-            Array.prototype.slice.call(opAgentControlHost.children).forEach(function(el) {
-                if (el !== control.iframe) el.remove();
-            });
-        }
-        control.iframe.style.position = "";
-        control.iframe.style.top = "";
-        control.iframe.style.left = "";
-        control.iframe.style.visibility = "";
-        if (old) {
-            try { old.destroy(); } catch (err) {
-                console.log("销毁旧控制台失败：", err);
-            }
-        }
+        holder.innerHTML = html;
     }
 
+    // 一个会话只启动一个 iframe：抽屉打开时预热，页签切换只发 set-panel 走 iframe 内部路由，
+    // 鉴权完成前切页签只记下目标面板，不销毁重建。抽屉关闭或会话变化时才销毁。
     async function opShowAgentControlPanel(panel) {
         if (!opAgentControlHost) return;
         var sessionId = opCurrentSessionId || currentSessionId;
-        if (opAgentControlRevealTimer) {
-            clearTimeout(opAgentControlRevealTimer);
-            opAgentControlRevealTimer = null;
-        }
-        if (opAgentControlPending) {
-            try { opAgentControlPending.destroy(); } catch (err) {
-                console.log("销毁待加载控制台失败：", err);
-            }
-            opAgentControlPending = null;
-        }
         if (!sessionId) {
             opDestroyAgentControl();
-            opAgentControlHost.innerHTML = '<div class="op-image-loading op-agent-control-empty">请先在“会话”页创建会话，再配置智能体。</div>';
+            opAgentControlPlaceholder('<div class="op-image-loading op-agent-control-empty">请先在“会话”页创建会话，再配置智能体。</div>');
             return;
         }
+        if (opAgentControl && opAgentControl.sessionId === sessionId) {
+            if (opAgentControlPanel === panel) return;
+            opAgentControlPanel = panel;
+            if (opAgentControlReady) {
+                opAgentControl.setPanel(panel);
+                opSwapAgentControl();
+            }
+            return;
+        }
+        opDestroyAgentControl();
         opAgentControlPanel = panel;
-        // 同会话下直接让已启动的 iframe 内部切路由（需要 msk 新版宿主脚本支持 setPanel），避免整页重启
-        if (opAgentControl && opAgentControl.sessionId === sessionId && typeof opAgentControl.setPanel === "function") {
-            opAgentControl.setPanel(panel);
-            return;
-        }
-        if (!opAgentControl) {
-            opAgentControlHost.innerHTML = '<div class="op-image-loading op-agent-control-loading"><span class="op-loading-spinner"></span><span>正在加载控制台...</span></div>';
-        }
+        opAgentControlPlaceholder('<div class="op-image-loading op-agent-control-loading"><span class="op-loading-spinner"></span><span>正在加载控制台...</span></div>');
+        var loadToken = ++opAgentControlLoadSeq;
         try {
             await opLoadAgentControlScript();
         } catch (err) {
-            opShowAgentControlError(err.message || "控制台脚本加载失败");
+            if (loadToken === opAgentControlLoadSeq) opShowAgentControlError(err.message || "控制台脚本加载失败");
             return;
         }
-        if (opAgentControlPanel !== panel) return;
+        // 等脚本期间会话或抽屉状态变了，交给最新一次调用处理。
+        if (loadToken !== opAgentControlLoadSeq || opAgentControl) return;
         if (!window.MisskeyAgentControl) {
             opShowAgentControlError("msk 宿主脚本不可用");
             return;
@@ -2715,23 +2691,29 @@ document.addEventListener("DOMContentLoaded", function (event) {
             control = new window.MisskeyAgentControl({
                 origin: MSK_ORIGIN,
                 sessionId: sessionId,
-                panel: panel,
+                panel: opAgentControlPanel,
                 token: function() {
                     if (!mskToken) throw new Error("没有可用的 Misskey token");
                     return mskToken;
                 },
                 appearance: opAgentControlAppearance(),
                 autoHeight: false,
+                className: "op-agent-control-frame",
                 title: "msk 智能体控制台",
                 onEvent: function(message) {
-                    if (control !== opAgentControl) {
-                        if (!message || typeof message.type !== "string") return;
-                        // 鉴权通过即切换：iframe 固定高度自身滚动，加载态由 msk 内部 UI 呈现
-                        if (message.type === "misskey:agent-control:authenticated"
-                            || message.type === "misskey:agent-control:error") {
-                            opRevealAgentControl(control, panel);
-                            if (message.type === "misskey:agent-control:error") opHandleAgentControlEvent(message);
+                    if (control !== opAgentControl || !message || typeof message.type !== "string") return;
+                    if (message.type === "misskey:agent-control:authenticated") {
+                        opAgentControlReady = true;
+                        if (opAgentControlTimeout) {
+                            clearTimeout(opAgentControlTimeout);
+                            opAgentControlTimeout = null;
                         }
+                        // 鉴权期间用户切过页签：补发一次目标面板。
+                        if (control.panel !== opAgentControlPanel) control.setPanel(opAgentControlPanel);
+                        control.iframe.classList.add("ready");
+                        opShowAgentControlError("");
+                        var holder = opAgentControlHost.querySelector(".op-agent-control-placeholder");
+                        if (holder) setTimeout(function() { holder.remove(); }, 260);
                         return;
                     }
                     opHandleAgentControlEvent(message);
@@ -2741,25 +2723,30 @@ document.addEventListener("DOMContentLoaded", function (event) {
             opShowAgentControlError("控制台初始化失败：" + (err.message || err));
             return;
         }
-        opStageAgentControlIframe(control);
+        opAgentControl = control;
+        opAgentControlReady = false;
         control.mount(opAgentControlHost);
-        opAgentControlPending = control;
-        opAgentControlRevealTimer = setTimeout(function() {
-            opRevealAgentControl(control, panel);
-        }, 5000);
+        opAgentControlTimeout = setTimeout(function() {
+            opAgentControlTimeout = null;
+            if (control === opAgentControl && !opAgentControlReady) {
+                opShowAgentControlError("控制台加载超时，请确认网络后关闭抽屉重试。");
+            }
+        }, 20000);
     }
 
     function opSyncAgentControlToken() {
         if (opAgentControl && mskToken) opAgentControl.setToken(mskToken);
     }
 
+    // 抽屉打开时就预热控制台：停在会话页时也在后台启动 iframe，首次点模型等页签即可秒开。
     function opSyncAgentControlSession() {
-        if (AGENT_CONTROL_PANELS.indexOf(opCurrentPage) === -1) return;
+        if (!opOverlay.classList.contains("active") || opOverlay.classList.contains("is-closing")) return;
         var sessionId = opCurrentSessionId || currentSessionId;
         if (!sessionId) return;
-        if (opAgentControl && opAgentControl.sessionId === sessionId) return;
-        if (opAgentControlPending && opAgentControlPending.sessionId === sessionId) return;
-        void opShowAgentControlPanel(opCurrentPage);
+        var panel = AGENT_CONTROL_PANELS.indexOf(opCurrentPage) !== -1
+            ? opCurrentPage
+            : (opAgentControlPanel || AGENT_CONTROL_PANELS[0]);
+        void opShowAgentControlPanel(panel);
     }
 
     function opHandleAgentControlEvent(message) {
@@ -3057,6 +3044,7 @@ document.addEventListener("DOMContentLoaded", function (event) {
         var hasCurrentConfig = !!opConfigLoadedSessionId && opConfigLoadedSessionId === (opCurrentSessionId || currentSessionId);
         opSetInitialLoading(!hasCurrentConfig);
         opSetPage(opCurrentPage || "session");
+        opSyncAgentControlSession();
         opRenderSessionLoading();
         if (opPanelLoadPromise) return opPanelLoadPromise;
         opPanelLoadPromise = (async function() {
