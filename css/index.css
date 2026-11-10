@@ -1510,57 +1510,19 @@ body {
     background-color: #777;
 }
 
-/* ==================== Operation 面板 ==================== */
-.op-overlay {
-    display: none;
-    position: fixed;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    background: rgba(0, 0, 0, 0.7);
-    z-index: 2000;
-    justify-content: center;
-    align-items: center;
-    overflow-y: auto;
-    padding: 3rem;
-    box-sizing: border-box;
-}
-.op-overlay.active {
-    display: flex;
-}
-.op-panel {
-    position: relative;
-    width: min(1200px, 100%);
-    max-height: calc(100vh - 6rem);
-    overflow-y: auto;
-    background: #2d2d2d;
-    border: 1px solid #555;
-    border-radius: 1.2rem;
-    padding: 3rem 3.2rem;
-    color: #efefef;
-    font-size: 1.6rem;
-    box-sizing: border-box;
-}
-.op-panel::-webkit-scrollbar {
-    width: 1.2rem;
-}
-.op-panel::-webkit-scrollbar-thumb {
-    border-radius: 0.3rem;
-    background-color: #202020;
-}
-.op-panel::-webkit-scrollbar-track {
-    margin-top: 1rem;
-    margin-bottom: 1rem;
-}
+/* ==================== Operation 面板（抽屉布局见 chat-ui.css） ==================== */
 .op-close-btn {
     position: absolute;
     top: 1.5rem;
     right: 2rem;
+    border: 0;
+    background: transparent;
+    padding: 0;
     cursor: pointer;
     font-size: 3rem;
     color: #999;
     line-height: 1;
+    font-family: inherit;
 }
 .op-close-btn:hover {
     color: #fff;
@@ -1570,70 +1532,6 @@ body {
     margin-bottom: 2rem;
     color: #efefef;
     text-align: center;
-}
-.op-subnav {
-    display: grid;
-    grid-template-columns: repeat(8, minmax(0, 1fr));
-    gap: 0.8rem;
-    margin-bottom: 2rem;
-}
-.op-subnav-btn {
-    min-height: 3.8rem;
-    border: 0;
-    border-radius: 0.8rem;
-    background: #555;
-    color: #efefef;
-    cursor: pointer;
-    font: inherit;
-    font-size: 1.35rem;
-    font-weight: 700;
-    transition: background 0.15s ease, color 0.15s ease;
-}
-.op-subnav-btn:hover {
-    background: #777;
-}
-.op-subnav-btn.active {
-    background: #777;
-    color: #fff;
-}
-.op-page {
-    display: none;
-}
-.op-page.active {
-    display: block;
-}
-/* msk 托管控制台：iframe 自身为唯一滚动容器（滚轮事件不会透出 iframe，外层滚动方案下滚轮必然失效） */
-.op-agent-control {
-    display: flex;
-    flex-direction: column;
-    flex: 0 1 auto;
-    min-height: 0;
-    /* 期望高度；弹窗触及 max-height 时经 flex 链收缩，页区永不滚出多余滚动条 */
-    height: min(560px, calc(100vh - 24rem));
-}
-.op-agent-control > iframe {
-    width: 100%;
-    /* !important 覆盖宿主脚本写入的行内高度 */
-    height: 100% !important;
-    border: 0;
-    display: block;
-    border-radius: 0.8rem;
-    background: #2d2d2d;
-}
-.op-agent-control-loading,
-.op-agent-control-empty {
-    grid-column: 1 / -1;
-}
-.op-agent-control-empty {
-    min-height: 160px;
-}
-.op-agent-control-status {
-    border-left: 0.35rem solid #e6a15a;
-    border-radius: 0.6rem;
-    background: #302722;
-    color: #f2ede7;
-    padding: 0.8rem 1rem;
-    margin-bottom: 1rem;
 }
 /* 控制台导航定位到消息时的高亮 */
 .msg-highlight {
@@ -1840,7 +1738,7 @@ body {
     min-height: 2rem;
     color: #bebebe;
 }
-.op-panel > .op-status:empty {
+.op-drawer .op-status:empty {
     display: none;
 }
 .op-status.success {
@@ -1958,22 +1856,10 @@ body {
     accent-color: #d6740b;
 }
 
-@media (prefers-reduced-motion: reduce) {
-    *,
-    *::before,
-    *::after {
-        animation-duration: 0.01ms !important;
-        animation-iteration-count: 1 !important;
-        scroll-behavior: auto !important;
-        transition-duration: 0.01ms !important;
-    }
-}
-
 /* 统一聊天区与 Operation 内部滚动条，避免出现浏览器默认白色滚动条。 */
 .content .left,
 .right .right_3,
-.op-panel,
-.op-page.active,
+.op-drawer-session,
 .op-session-list,
 .settings-panel {
     scrollbar-width: thin;
@@ -1982,8 +1868,7 @@ body {
 
 .content .left::-webkit-scrollbar,
 .right .right_3::-webkit-scrollbar,
-.op-panel::-webkit-scrollbar,
-.op-page.active::-webkit-scrollbar,
+.op-drawer-session::-webkit-scrollbar,
 .op-session-list::-webkit-scrollbar,
 .settings-panel::-webkit-scrollbar {
     width: 8px;
@@ -1992,8 +1877,7 @@ body {
 
 .content .left::-webkit-scrollbar-track,
 .right .right_3::-webkit-scrollbar-track,
-.op-panel::-webkit-scrollbar-track,
-.op-page.active::-webkit-scrollbar-track,
+.op-drawer-session::-webkit-scrollbar-track,
 .op-session-list::-webkit-scrollbar-track,
 .settings-panel::-webkit-scrollbar-track {
     background: #202020;
@@ -2002,40 +1886,12 @@ body {
 
 .content .left::-webkit-scrollbar-thumb,
 .right .right_3::-webkit-scrollbar-thumb,
-.op-panel::-webkit-scrollbar-thumb,
-.op-page.active::-webkit-scrollbar-thumb,
+.op-drawer-session::-webkit-scrollbar-thumb,
 .op-session-list::-webkit-scrollbar-thumb,
 .settings-panel::-webkit-scrollbar-thumb {
     background: #5b5b5b;
     border: 2px solid #202020;
     border-radius: 999px;
-}
-
-.op-panel {
-    max-height: min(720px, calc(100vh - 6rem));
-    min-height: 0;
-    overflow: hidden;
-    display: flex;
-    flex-direction: column;
-}
-
-.op-panel > .op-page.active {
-    flex: 1 1 auto;
-    min-height: 0;
-    overflow-x: hidden;
-    overflow-y: auto;
-    padding-right: 0.4rem;
-}
-
-.op-panel > .op-title,
-.op-panel > .op-subnav {
-    flex: none;
-}
-
-.op-panel > .op-page[data-op-page="agent-control"].active {
-    display: flex;
-    flex-direction: column;
-    overflow: hidden;
 }
 
 /* ==================== 交互动画 ====================
@@ -2063,29 +1919,20 @@ body {
     to { opacity: 1; scale: 1; }
 }
 
-.op-overlay.active,
 .settings-overlay.active,
 .auth-overlay.active {
     animation: ui-fade-in 0.22s ease-out both;
 }
-.op-overlay.active > .op-panel,
 .settings-overlay.active > .settings-panel,
 .auth-overlay.active > .auth-panel {
     animation: ui-panel-in 0.28s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
-.op-overlay.is-closing,
 .settings-overlay.is-closing {
     animation: ui-fade-out 0.2s ease-in both;
     pointer-events: none;
 }
-.op-overlay.is-closing > .op-panel,
 .settings-overlay.is-closing > .settings-panel {
     animation: ui-panel-out 0.2s ease-in both;
-}
-
-/* 子页切换淡入 */
-.op-page.active {
-    animation: ui-fade-in 0.18s ease-out;
 }
 
 /* 发送 / 等待切换时输入区与等待时钟淡入 */
@@ -2151,7 +1998,6 @@ body {
  * 字号随 setRem 按窗口宽度缩放，在平板/窄窗口下会小到不可读；
  * 用 max() 给弹窗文字设下限，宽屏下仍取原 rem 值，观感不变。
  */
-.op-panel,
 .settings-panel {
     font-size: max(14px, 1.6rem);
 }
@@ -2163,10 +2009,6 @@ body {
 }
 .op-close-btn {
     font-size: max(26px, 3rem);
-}
-.op-subnav-btn {
-    min-height: max(36px, 3.8rem);
-    font-size: max(13px, 1.35rem);
 }
 .op-label {
     font-size: max(15px, 1.8rem);
@@ -2180,8 +2022,7 @@ body {
     font-size: max(12px, 1.2rem);
 }
 .op-session-loading,
-.op-session-empty,
-.op-agent-control-status {
+.op-session-empty {
     font-size: max(13px, 1.3rem);
 }
 .op-caption {
@@ -2213,13 +2054,4 @@ body {
 }
 .auth-overlay .auth-status {
     font-size: max(13px, 1.4rem);
-}
-
-@media (max-width: 900px) {
-    .op-overlay {
-        padding: 16px;
-    }
-    .op-subnav {
-        grid-template-columns: repeat(4, minmax(0, 1fr));
-    }
 }
