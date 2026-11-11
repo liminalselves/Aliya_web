@@ -596,12 +596,6 @@ html.is-mobile .op-drawer .settings-toggle-row {
     border-radius: 2px;
     background: currentColor;
 }
-/* 等待区原本只放时钟图标，带上停止按钮时需要横向排布 */
-#waitImg.has-stop {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-}
 
 /* ==================== 消息操作 ==================== */
 #aliyaText li[data-msg-ref] {

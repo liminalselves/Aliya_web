@@ -1235,32 +1235,13 @@ body {
     display: none;
 }
 
-#playerInputArea[hidden],
-#playerText.is-waiting #playerInputArea {
+#playerInputArea[hidden] {
     display: none !important;
 }
 
 #waitImg[hidden],
 #playerText:not(.is-waiting) #waitImg {
     display: none !important;
-}
-
-#playerText.is-waiting {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    overflow: hidden;
-}
-
-#playerText.is-waiting #waitImg {
-    width: 100%;
-    height: 100%;
-    min-height: 0;
-    margin: 0;
-    padding: 0;
-    border: 0;
-    border-radius: 0;
-    background: transparent;
 }
 
 .chat-loading-spinner {
@@ -2123,14 +2104,24 @@ body > .content,
     transform: translateY(1px);
 }
 
-/* 移动端等待态：right_3 为自适应高度，给 loader 一个合适的最小高度。 */
-#playerText.is-waiting {
-    min-height: 96px;
+/* 移动端等待态：等待条铺满输入框，时钟居中显示；停止按钮为右上角的 X 图标。 */
+.player-compose-row .loader {
+    position: absolute;
+    z-index: 2;
+    inset: 0;
+    width: auto;
+    min-height: 0;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
 }
 
-#playerText.is-waiting #waitImg {
-    height: auto;
-    min-height: 96px;
+.player-compose-row .wait-clock {
+    flex: none;
+    width: auto;
+    height: min(80%, 52px);
+    aspect-ratio: 1;
 }
 
 /* 移动端弹窗：保留完整功能，但降低字号和内边距，避免内容被截断。 */
@@ -2509,14 +2500,58 @@ body {
     height: auto;
 }
 
-/* 等待区：时钟与停止按钮同排，窄屏下文字按钮不换行 */
-#playerText.is-waiting #waitImg.has-stop {
-    gap: 10px;
+/* 等待时隐藏图片上传按钮；停止按钮为右上角悬浮的 X 图标，不占输入框空间 */
+.player-input-area.is-waiting .image-upload-btn {
+    display: none;
 }
-.stop-reply-btn {
-    height: 36px;
-    flex: none;
-    white-space: nowrap;
+.player-compose-row .stop-reply-btn {
+    position: absolute;
+    z-index: 3;
+    top: 0;
+    right: 0;
+    width: 30px;
+    height: 30px;
+    margin: 0;
+    padding: 0;
+    justify-content: center;
+    gap: 0;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    color: #a8a8a8;
+}
+.player-compose-row .stop-reply-btn:hover {
+    background: rgba(224, 119, 92, 0.24);
+    color: #ffb3a0;
+}
+/* 只保留图标，隐藏文字 */
+.player-compose-row .stop-reply-btn > span:not(.stop-reply-icon) {
+    display: none;
+}
+.player-compose-row .stop-reply-icon {
+    position: relative;
+    width: 12px;
+    height: 12px;
+    border-radius: 0;
+    background: none;
+}
+/* 用两道斜杠画出 X */
+.player-compose-row .stop-reply-icon::before,
+.player-compose-row .stop-reply-icon::after {
+    content: "";
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 135%;
+    height: 1.6px;
+    background: currentColor;
+    border-radius: 1px;
+}
+.player-compose-row .stop-reply-icon::before {
+    transform: translate(-50%, -50%) rotate(45deg);
+}
+.player-compose-row .stop-reply-icon::after {
+    transform: translate(-50%, -50%) rotate(-45deg);
 }
 
 /* 驾驶舱侧栏：长按/拖动不误选文字 */

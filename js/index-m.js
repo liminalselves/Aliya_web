@@ -1472,7 +1472,6 @@ document.addEventListener("DOMContentLoaded", function (event) {
         if (waitImg) waitImg.hidden = !isWaiting;
         if (playerInputArea) {
             playerInputArea.classList.toggle("is-waiting", isWaiting);
-            playerInputArea.toggleAttribute("hidden", isWaiting);
         }
         if (playerText) {
             playerText.classList.toggle("is-waiting", isWaiting);
@@ -1915,7 +1914,6 @@ document.addEventListener("DOMContentLoaded", function (event) {
         if (!stopReplyBtn) return;
         stopReplyBtn.hidden = !available;
         stopReplyBtn.disabled = false;
-        if (waitImg) waitImg.classList.toggle("has-stop", available);
     }
 
     function removeTimelineItem(item) {

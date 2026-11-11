@@ -1032,7 +1032,7 @@ body {
     font-size: 2rem;
 }
 
-/* 回复等待：隐藏输入区，在右侧面板居中显示时钟。 */
+/* 回复等待：等待条铺满输入框，时钟居中显示；停止按钮为右上角的 X 图标。 */
 .loader {
     width: 36rem;
     min-height: 4.5rem;
@@ -1050,22 +1050,23 @@ body {
     font-size: 1.35rem;
 }
 
-.right .right_3.is-waiting {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    overflow: hidden;
-}
-
-.right .right_3.is-waiting .loader {
-    width: 100%;
-    height: 100%;
+.player-compose-row .loader {
+    position: absolute;
+    z-index: 2;
+    inset: 0;
+    width: auto;
     min-height: 0;
     margin: 0;
     padding: 0;
     border: 0;
     border-radius: 0;
-    background: transparent;
+}
+
+.player-compose-row .wait-clock {
+    flex: none;
+    width: auto;
+    height: min(80%, 9rem);
+    aspect-ratio: 1;
 }
 
 .wait-clock {
@@ -1130,30 +1131,14 @@ body {
     display: none;
 }
 
-/* hidden 会被后续的 .player-input-area / 等待态布局规则覆盖；在等待期间只保留居中的时钟。 */
-#playerInputArea[hidden],
-#playerText.is-waiting #playerInputArea {
+/* hidden 会被后续的 .player-input-area 布局规则覆盖，这里兜底。 */
+#playerInputArea[hidden] {
     display: none !important;
 }
 
 #waitImg[hidden],
 #playerText:not(.is-waiting) #waitImg {
     display: none !important;
-}
-
-#playerText.is-waiting {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    overflow: hidden;
-}
-
-#playerText.is-waiting #waitImg {
-    width: 100%;
-    height: 100%;
-    min-height: 0;
-    margin: 0;
-    padding: 0;
 }
 
 .chat-loading-spinner {
@@ -1204,8 +1189,7 @@ body {
 }
 
 .player-input-area.is-waiting .image-upload-btn {
-    opacity: 0.5;
-    pointer-events: none;
+    display: none;
 }
 
 @keyframes ui-spin {
@@ -1492,6 +1476,63 @@ body {
 
 .image-upload-btn.has-file .media-upload-label {
     color: #d8a36d;
+}
+
+/* 停止输出：等待时在右上角悬浮关闭样式的 X 图标，不占输入框空间 */
+.player-compose-row .stop-reply-btn {
+    position: absolute;
+    z-index: 3;
+    top: 0;
+    right: 0;
+    width: 3.6rem;
+    height: 3.6rem;
+    margin: 0;
+    padding: 0;
+    justify-content: center;
+    gap: 0;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    color: #a8a8a8;
+}
+
+.player-compose-row .stop-reply-btn:hover {
+    background: rgba(224, 119, 92, 0.24);
+    color: #ffb3a0;
+}
+
+/* 只保留图标，隐藏文字 */
+.player-compose-row .stop-reply-btn > span:not(.stop-reply-icon) {
+    display: none;
+}
+
+.player-compose-row .stop-reply-icon {
+    position: relative;
+    width: 1.5rem;
+    height: 1.5rem;
+    border-radius: 0;
+    background: none;
+}
+
+/* 用两道斜杠画出 X */
+.player-compose-row .stop-reply-icon::before,
+.player-compose-row .stop-reply-icon::after {
+    content: "";
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 135%;
+    height: 0.2rem;
+    background: currentColor;
+    border-radius: 0.1rem;
+}
+
+.player-compose-row .stop-reply-icon::before {
+    transform: translate(-50%, -50%) rotate(45deg);
+}
+
+.player-compose-row .stop-reply-icon::after {
+    transform: translate(-50%, -50%) rotate(-45deg);
 }
 
 .player-input-area button {
