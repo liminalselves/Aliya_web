@@ -1902,7 +1902,10 @@ document.addEventListener("DOMContentLoaded", function (event) {
         aliyaText.querySelectorAll(selector).forEach(function(li) {
             var meta = li.nextElementSibling;
             if (meta && meta.classList.contains("message-meta")) meta.remove();
+            var divider = li.previousElementSibling;
             li.remove();
+            // 被撤回的是跨天分隔线之后的唯一一条消息时，分隔线会变孤儿，一并移除。
+            if (divider && divider.classList.contains("timeline-date-divider") && !divider.nextElementSibling) divider.remove();
         });
     }
 
@@ -2239,7 +2242,7 @@ document.addEventListener("DOMContentLoaded", function (event) {
                 items.push({ label: "回溯到此处", icon: "↶", action: function() { void rollbackToTimelineItem(item); } });
             }
             items.push("divider");
-            items.push({ label: "删除", icon: "🗑", danger: true, action: function() { void deleteTimelineItem(item); } });
+            items.push({ label: "删除", icon: "x", danger: true, action: function() { void deleteTimelineItem(item); } });
         }
         return items;
     }
