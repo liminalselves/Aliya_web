@@ -38,54 +38,6 @@ body {
 .content_main {
     padding: 1.5rem;
 }
-.head {
-    display: flex;
-    align-items: center;
-    gap: 1rem;
-    background-color: #363636;
-    height: 18rem;
-    border-radius: 1.5rem;
-    padding: 0 1rem;
-
-}
-.head li {
-    overflow: hidden;
-    flex: 1;
-    height: 12.2rem;
-    text-align: center;
-    line-height: 4.2rem;
-    color: #c1c1c1;
-    background-color: #3f3f3f;
-    border-radius: 1rem;
-    margin-left: 0;
-}
-
-.head li:last-child{
-    flex: 0 0 auto;
-    width: 15.5rem;
-    overflow: hidden;
-    margin-left: auto;
-    margin-right: 3rem;
-
-}
-.head li img{
-    height: 100%;
-    width: 100%;
-}
-
-.head li button {
-    border: 0;
-    width: 100%;
-    height: 12.2rem;
-    font-size: 5.5rem;
-    text-align: center;
-    line-height: 4.2rem;
-    color: #c1c1c1;
-    background-color: #3f3f3f;
-}
-.head li:last-child button {
-    width: 15.5rem;
-}
 
 /* ==================== 顶部状态栏 ==================== */
 .top-bar {
@@ -179,48 +131,13 @@ body {
     background: #a18a54;
 }
 
-/* 菜单容器 */
-.side-menu {
-    position: fixed;
-    top: 0;
-    right: -70%; /* 初始位置在屏幕外 */
-    width: 70%;
-    height: 100vh;
-    transition: transform 0.3s ease-out;
-    z-index: 1000;
-  }
-  
-/* 菜单内容样式 */
+/* 状态页内容容器（原驾驶舱侧栏，现嵌入 Operation「状态」页签） */
 .menu-content {
 
     width: 100%;
     height: 100%;
     background: #2d2d2d;
     box-shadow: -2px 0 12px rgba(0,0,0,0.15);
-}
-
-/* 激活状态 */
-.side-menu.active {
-    transform: translateX(-100%); /* 向左移动自身宽度 */
-}
-
-/* 遮罩层 */
-.menu-overlay {
-    position: fixed;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    background: rgba(0,0,0,0.5);
-    opacity: 0;
-    transition: opacity 0.3s;
-    pointer-events: none; /* 防止点击穿透 */
-    z-index: 999;
-}
-
-.menu-overlay.active {
-    opacity: 1;
-    pointer-events: auto;
 }
 
 /* ==================== 主布局（弹性撑满） ==================== */
@@ -1484,31 +1401,6 @@ body {
     font-size: 4rem;
 }
 
-.settings-overlay {
-    display: none;
-    position: fixed;
-    inset: 0;
-    background: rgba(0, 0, 0, 0.72);
-    z-index: 2000;
-    justify-content: center;
-    align-items: center;
-    padding: 0;
-    box-sizing: border-box;
-}
-
-.settings-overlay.active {
-    display: flex;
-}
-
-.settings-panel {
-    position: relative;
-    overflow-y: auto;
-    background: #2d2d2d;
-    border: 0.2rem solid #555;
-    color: #efefef;
-    box-sizing: border-box;
-}
-
 .op-close-btn {
     position: absolute;
     border: 0;
@@ -1845,10 +1737,6 @@ body > .content,
     overflow: hidden;
 }
 
-.settings-overlay {
-    overflow: hidden;
-}
-
 .new-page,
 .content_main,
 .new-page > .content_main > .content,
@@ -1896,45 +1784,49 @@ body > .content,
     border-radius: 999px;
 }
 
-.head {
-    height: 56px;
-    gap: 4px;
-    padding: 4px;
+/* 顶栏齿轮：所有面板（Operation/设置/状态）的唯一入口 */
+.panel-entry-btn {
+    flex: 0 0 auto;
+    width: 54px;
+    height: 54px;
+    padding: 0;
     border: 1px solid var(--mobile-border);
     border-radius: 13px;
-    background: var(--mobile-panel);
+    background: #2d2d2d;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    touch-action: manipulation;
+    transition: background-color 0.15s ease, transform 0.1s ease;
 }
 
-.head li,
-.head li button {
-    height: 46px;
-    line-height: 1;
+.panel-entry-btn svg {
+    width: 26px;
+    height: 26px;
+    fill: #8a8a8a;
+    transition: fill 0.15s ease;
 }
 
-.head li {
-    border-radius: 9px;
+.panel-entry-btn:active {
+    background: #3a3a3a;
+    transform: translateY(1px);
 }
 
-.head li button {
-    padding: 0 4px;
-    font-size: clamp(13px, 3.8vw, 17px);
-    color: #d5d5d5;
-    background: var(--mobile-panel-raised);
+.panel-entry-btn:active svg {
+    fill: var(--mobile-accent);
 }
 
-.head li:last-child {
-    width: 50px;
-    margin-right: 0;
+/* 「状态」页：原驾驶舱侧栏整体嵌入，页边距与其他子页面对齐，容器纵向滚动 */
+.op-page-status {
+    padding: 14px 14px calc(18px + var(--ui-safe-bottom));
 }
 
-.head li:last-child button {
-    width: 50px;
-}
-
-.head li:last-child img {
-    width: 28px;
-    height: 28px;
-    object-fit: contain;
+.op-page-status .menu-content {
+    flex: 1 1 auto;
+    min-height: 0;
+    padding: 0;
+    overflow-x: hidden;
 }
 
 .new-page .content_main > .content {
@@ -1956,8 +1848,7 @@ body > .content,
 .content .left,
 .right .right_3,
 .op-drawer-session,
-.op-session-list,
-.settings-panel {
+.op-session-list {
     scrollbar-width: thin;
     scrollbar-color: #5b5b5b #202020;
 }
@@ -1965,8 +1856,7 @@ body > .content,
 .content .left::-webkit-scrollbar-track,
 .right .right_3::-webkit-scrollbar-track,
 .op-drawer-session::-webkit-scrollbar-track,
-.op-session-list::-webkit-scrollbar-track,
-.settings-panel::-webkit-scrollbar-track {
+.op-session-list::-webkit-scrollbar-track {
     background: #202020;
     border-radius: 999px;
 }
@@ -1974,8 +1864,7 @@ body > .content,
 .content .left::-webkit-scrollbar-thumb,
 .right .right_3::-webkit-scrollbar-thumb,
 .op-drawer-session::-webkit-scrollbar-thumb,
-.op-session-list::-webkit-scrollbar-thumb,
-.settings-panel::-webkit-scrollbar-thumb {
+.op-session-list::-webkit-scrollbar-thumb {
     background: #5b5b5b;
     border: 1px solid #202020;
     border-radius: 999px;
@@ -2098,7 +1987,6 @@ body > .content,
 }
 
 .player-input-area button:active,
-.head li button:active,
 .op-btn:active,
 .op-subnav-btn:active {
     transform: translateY(1px);
@@ -2125,53 +2013,12 @@ body > .content,
 }
 
 /* 移动端弹窗：保留完整功能，但降低字号和内边距，避免内容被截断。 */
-.settings-overlay {
-    padding: 12px;
-    align-items: center;
-}
-
-.settings-panel,
 .auth-overlay .auth-panel {
     width: min(100%, 560px);
     max-height: calc(100dvh - 24px);
     padding: 44px 14px 16px;
     border-radius: 16px;
     font-size: 14px;
-}
-
-.settings-panel {
-    width: min(86vw, 520px);
-    max-height: calc(100dvh - 48px);
-    min-height: 0;
-    padding: 0 14px 16px;
-    overflow-x: hidden;
-    overflow-y: auto;
-    scrollbar-gutter: stable;
-    display: flex;
-    flex-direction: column;
-}
-
-.settings-panel > .op-close-btn {
-    top: 8px;
-    right: 10px;
-    z-index: 2;
-    width: 40px;
-    height: 40px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    border-radius: 10px;
-    font-size: 26px;
-}
-
-.settings-panel > .op-title {
-    min-height: 56px;
-    margin: 0 44px 8px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 21px;
-    line-height: 1;
 }
 
 .op-section {
@@ -2321,15 +2168,6 @@ body > .content,
 }
 
 @media (max-width: 380px) {
-    .head li button {
-        font-size: 12px;
-    }
-
-    .head li:last-child,
-    .head li:last-child button {
-        width: 42px;
-    }
-
     .content .left li,
     .content .left .player {
         max-width: 94%;
@@ -2363,20 +2201,11 @@ body > .content,
     to { opacity: 1; scale: 1; }
 }
 
-.settings-overlay.active,
 .auth-overlay.active {
     animation: ui-fade-in 0.22s ease-out both;
 }
-.settings-overlay.active > .settings-panel,
 .auth-overlay.active > .auth-panel {
     animation: ui-panel-in 0.28s cubic-bezier(0.22, 1, 0.36, 1) both;
-}
-.settings-overlay.is-closing {
-    animation: ui-fade-out 0.2s ease-in both;
-    pointer-events: none;
-}
-.settings-overlay.is-closing > .settings-panel {
-    animation: ui-panel-out 0.2s ease-in both;
 }
 
 /* 发送 / 等待切换时输入区与等待时钟淡入 */
@@ -2406,24 +2235,6 @@ body > .content,
     outline-offset: 2px;
 }
 
-/* 顶栏功能按钮反馈 */
-#operationBtn,
-#settingsBtn {
-    cursor: pointer;
-    transition: background-color 0.15s ease, color 0.15s ease, transform 0.1s ease;
-}
-#operationBtn:active,
-#settingsBtn:active {
-    transform: translateY(1px);
-}
-@media (hover: hover) {
-    #operationBtn:hover,
-    #settingsBtn:hover {
-        background-color: #4a4a4a;
-        color: #e8e8e8;
-    }
-}
-
 .op-btn,
 .op-subnav-btn {
     transition: background 0.15s ease, color 0.15s ease, opacity 0.2s, transform 0.1s ease;
@@ -2447,17 +2258,7 @@ body > .content,
 }
 
 /* ==================== 移动端适配 ==================== */
-/* 侧边驾驶舱：跟随真实可视高度，避开刘海/手势条；横屏或矮屏时内部可滚动而不被裁切。 */
-.side-menu {
-    height: calc(var(--dvh, 1vh) * 100);
-    visibility: hidden;
-    transition: transform 0.32s cubic-bezier(0.22, 1, 0.36, 1), visibility 0s linear 0.32s;
-    will-change: transform;
-}
-.side-menu.active {
-    visibility: visible;
-    transition: transform 0.32s cubic-bezier(0.22, 1, 0.36, 1), visibility 0s;
-}
+/* 状态页内容容器：跟随真实可视高度，避开刘海/手势条；内部可滚动而不被裁切。 */
 .menu-content {
     box-sizing: border-box;
     padding-top: var(--safe-top);
@@ -2468,10 +2269,6 @@ body > .content,
 }
 .menu-content::-webkit-scrollbar {
     display: none;
-}
-
-.settings-overlay {
-    padding: calc(12px + var(--safe-top)) 12px calc(12px + var(--safe-bottom));
 }
 
 /* iOS 在输入框字号小于 16px 时聚焦会自动放大页面 */
@@ -2552,12 +2349,6 @@ body {
 }
 .player-compose-row .stop-reply-icon::after {
     transform: translate(-50%, -50%) rotate(-45deg);
-}
-
-/* 驾驶舱侧栏：长按/拖动不误选文字 */
-.side-menu {
-    -webkit-user-select: none;
-    user-select: none;
 }
 
 /* 去掉触摸点击的双击缩放等待 */

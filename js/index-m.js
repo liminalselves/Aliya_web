@@ -270,31 +270,6 @@ document.addEventListener("DOMContentLoaded", function (event) {
         window.scrollTo(0, 0);
     }, 100);
 
-    const menuToggle = document.querySelector('.menu-toggle');
-    const sideMenu = document.querySelector('.side-menu');
-    const menuOverlay = document.querySelector('.menu-overlay');
-    if (menuToggle && sideMenu && menuOverlay) {
-        menuToggle.setAttribute('aria-label', '展开驾驶舱面板');
-        menuToggle.setAttribute('aria-expanded', 'false');
-        const closeSideMenu = () => {
-            sideMenu.classList.remove('active');
-            menuOverlay.classList.remove('active');
-            menuToggle.setAttribute('aria-expanded', 'false');
-        };
-        menuToggle.addEventListener('click', () => {
-            sideMenu.classList.add('active');
-            menuOverlay.classList.add('active');
-            menuToggle.setAttribute('aria-expanded', 'true');
-        });
-        menuOverlay.addEventListener('click', closeSideMenu);
-        document.addEventListener('keydown', (e) => {
-            if (e.key === 'Escape' && sideMenu.classList.contains('active')) closeSideMenu();
-        });
-        sideMenu.addEventListener('click', (e) => {
-            e.stopPropagation();
-        });
-    }
-
     // 心电图模块开始 (支持多 canvas)
     var ecgCanvases = [
         document.getElementById('ecgCanvas'),
@@ -308,11 +283,14 @@ document.addEventListener("DOMContentLoaded", function (event) {
         context.setTransform(ecgPixelRatio, 0, 0, ecgPixelRatio, 0, 0);
         return context;
     });
-    var ecgSideMenu = document.querySelector('.side-menu');
-    // 侧边菜单收起时其中的心电图不可见，跳过绘制以减少每帧开销。
+    var ecgStatusPage = document.querySelector('.op-page[data-op-page="status"]');
+    var ecgOpOverlay = document.getElementById('opOverlay');
+    // 顶栏心电图常显；「状态」页里的心电图仅在面板打开且该页激活时绘制，收起时跳过以减少每帧开销。
     function ecgCanvasVisible(index) {
         var c = ecgCanvases[index];
-        return !(ecgSideMenu && ecgSideMenu.contains(c) && !ecgSideMenu.classList.contains('active'));
+        if (!c) return false;
+        if (!ecgStatusPage || !ecgStatusPage.contains(c)) return true;
+        return ecgStatusPage.classList.contains('active') && !!ecgOpOverlay && ecgOpOverlay.classList.contains('active');
     }
     const ecgPoints = [
         { x: 0, y: 100 }, { x: 80, y: 100 }, { x: 90, y: 90 }, { x: 95, y: 110 },
@@ -2277,10 +2255,7 @@ document.addEventListener("DOMContentLoaded", function (event) {
         if (e.key === "Enter" && (e.ctrlKey || e.shiftKey)) { e.preventDefault(); void sendMessage(); }
     });
 
-    // ==================== 设置面板 ====================
-    var settingsBtn = document.getElementById("settingsBtn");
-    var settingsOverlay = document.getElementById("settingsOverlay");
-    var settingsCloseBtn = document.getElementById("settingsCloseBtn");
+    // ==================== 设置页（Operation 子标签页） ====================
     var settingsStatus = document.getElementById("settingsStatus");
     var segTokenInput = document.getElementById("segToken");
     var backgroundMusicSelect = document.getElementById("backgroundMusicSelect");
@@ -2310,26 +2285,16 @@ document.addEventListener("DOMContentLoaded", function (event) {
         setTimeout(finish, 320);
     }
 
-    function openSettingsPanel() {
+    // 切到设置页时重置 Token 输入框与两个下拉框的展示值。
+    function syncSettingsPage() {
         segTokenInput.value = "";
         segTokenInput.placeholder = mskToken ? "留空保持当前 Token" : "Misskey API Token";
         if (backgroundMusicSelect) backgroundMusicSelect.value = activeBackgroundMusic;
         if (playModeSelect) playModeSelect.value = activePlayMode;
-        settingsOverlay.classList.remove("is-closing");
-        settingsOverlay.classList.add("active");
         settingsStatus.textContent = "";
         settingsStatus.className = "op-status";
     }
 
-    function closeSettingsPanel() {
-        closeOverlayAnimated(settingsOverlay);
-    }
-
-    settingsBtn.addEventListener("click", openSettingsPanel);
-    settingsCloseBtn.addEventListener("click", closeSettingsPanel);
-    settingsOverlay.addEventListener("click", function(e) {
-        if (e.target === settingsOverlay) closeSettingsPanel();
-    });
     if (backgroundMusicSelect) {
         backgroundMusicSelect.value = activeBackgroundMusic;
         backgroundMusicSelect.addEventListener("change", function() {
@@ -2390,7 +2355,7 @@ document.addEventListener("DOMContentLoaded", function (event) {
     var opPanel = document.getElementById("opPanel");
     var opInitialLoading = document.getElementById("opInitialLoading");
     var opCloseBtn = document.getElementById("opCloseBtn");
-    var operationBtn = document.getElementById("operationBtn");
+    var panelEntryBtn = document.getElementById("panelEntryBtn");
     var opSubnav = document.getElementById("opSubnav");
     var opSegToggle = document.getElementById("opSegToggle");
     var opSessionList = document.getElementById("opSessionList");
@@ -2470,6 +2435,7 @@ document.addEventListener("DOMContentLoaded", function (event) {
         }
         // 切回会话页时只隐藏控制台，保留 iframe，再切回来不必重新加载。
         if (isEmbedPage) void opShowAgentControlPanel(opCurrentPage);
+        if (opCurrentPage === "settings") syncSettingsPage();
     }
 
     function opSaveSegmentedOutput(enabled) {
@@ -3200,11 +3166,11 @@ document.addEventListener("DOMContentLoaded", function (event) {
         });
     })();
 
-    operationBtn.addEventListener("click", opOpenPanel);
+    // 顶栏齿轮：所有面板（会话/模型/…/设置/状态）的唯一入口
+    if (panelEntryBtn) panelEntryBtn.addEventListener("click", function() { void opOpenPanel(); });
     document.addEventListener("keydown", function(e) {
         if (e.key !== "Escape" || e.defaultPrevented) return;
         if (opOverlay.classList.contains("active")) opClosePanel();
-        else if (settingsOverlay.classList.contains("active")) closeSettingsPanel();
     });
     opCloseBtn.addEventListener("click", opClosePanel);
     opOverlay.addEventListener("click", function(e) {
@@ -3221,6 +3187,32 @@ document.addEventListener("DOMContentLoaded", function (event) {
             if (!target || !opSubnav.contains(target)) return;
             opSetPage(target.getAttribute("data-op-target"));
         });
+        // 鼠标拖拽横向滚动页签栏；触摸走原生滚动，不在这里重复处理
+        var subnavDragActive = false;
+        var subnavDragMoved = false;
+        var subnavDragStartX = 0;
+        var subnavDragStartLeft = 0;
+        opSubnav.addEventListener("pointerdown", function(e) {
+            if (e.pointerType !== "mouse" || e.button > 0) return;
+            subnavDragActive = true;
+            subnavDragMoved = false;
+            subnavDragStartX = e.clientX;
+            subnavDragStartLeft = opSubnav.scrollLeft;
+        });
+        window.addEventListener("pointermove", function(e) {
+            if (!subnavDragActive) return;
+            var dx = e.clientX - subnavDragStartX;
+            if (!subnavDragMoved && Math.abs(dx) < 5) return;
+            subnavDragMoved = true;
+            opSubnav.scrollLeft = subnavDragStartLeft - dx;
+        });
+        window.addEventListener("pointerup", function() { subnavDragActive = false; });
+        opSubnav.addEventListener("click", function(e) {
+            if (!subnavDragMoved) return;
+            subnavDragMoved = false;
+            e.preventDefault();
+            e.stopPropagation();
+        }, true);
     }
     if (opSegToggle) {
         opSegToggle.addEventListener("change", function() {

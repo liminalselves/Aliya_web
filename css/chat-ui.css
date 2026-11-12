@@ -429,7 +429,8 @@ html.is-mobile .op-drawer {
     border-top: 1px solid var(--ui-border);
     border-radius: 18px 18px 0 0;
     box-shadow: 0 -16px 40px rgba(0, 0, 0, 0.5);
-    touch-action: pan-y;
+    /* pan-x 放行子页签栏的横向滑动（手势判定沿祖先链取交集，pan-y 会拦掉横向手势） */
+    touch-action: pan-x pan-y;
 }
 html.is-mobile .op-overlay.active > .op-drawer {
     animation: drawer-in-up 0.38s var(--ui-ease-out) both;

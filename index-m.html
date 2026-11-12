@@ -6,8 +6,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <title>Aliya</title>
     <link rel="stylesheet" href="css/base.css">
-    <link rel="stylesheet" href="css/index-m.css?v=20261110-03">
-    <link rel="stylesheet" href="css/chat-ui.css?v=20261110-03">
+    <link rel="stylesheet" href="css/index-m.css?v=20261112-01">
+    <link rel="stylesheet" href="css/chat-ui.css?v=20261112-01">
     <link rel="stylesheet" href="css/loading-m.css?v=20261110-02">
 
 
@@ -15,7 +15,7 @@
     <script src="js/message-renderer.js?v=20261027-01" defer></script>
     <script src="js/chat-ui.js?v=20261110-02" defer></script>
     <script src="js/config.js?v=20260915-02" defer></script>
-    <script src="js/index-m.js?v=20261110-03" defer></script>
+    <script src="js/index-m.js?v=20261112-01" defer></script>
 
 
     <!-- 音乐引用 -->
@@ -66,9 +66,9 @@
                 </div>
                 <div class="top-status-bars">
                     <div class="status-bar-item">
-                        <span class="sb-label">O2</span>
+                        <span class="sb-label">ENG</span>
                         <div class="sb-track">
-                            <div class="sb-fill o2" style="width:91%"></div>
+                            <div class="sb-fill eng" style="width:53%"></div>
                         </div>
                     </div>
                     <div class="status-bar-item">
@@ -78,36 +78,17 @@
                         </div>
                     </div>
                     <div class="status-bar-item">
-                        <span class="sb-label">ENG</span>
+                        <span class="sb-label">O2</span>
                         <div class="sb-track">
-                            <div class="sb-fill eng" style="width:53%"></div>
+                            <div class="sb-fill o2" style="width:91%"></div>
                         </div>
                     </div>
                 </div>
-            </div>
-
-            <div class="head">
-
-                <li>
-                    <button id="operationBtn">Operation</button>
-                </li>
-
-                <li>
-                    <button style="color: #646464;">SOS</button>
-                </li>
-
-                <li>
-                    <button style="color: #646464;">FCS</button>
-                </li>
-
-                <li>
-                    <button id="settingsBtn">Settings</button>
-                </li>
-
-                <li>
-                    <button class="menu-toggle"><img src="img/展开.png" alt=""></button>
-                </li>
-
+                <button type="button" class="panel-entry-btn" id="panelEntryBtn" aria-label="打开面板" title="面板">
+                    <svg viewBox="0 0 24 24" focusable="false" aria-hidden="true">
+                        <path d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z"/>
+                    </svg>
+                </button>
             </div>
 
             <div class="content">
@@ -173,121 +154,6 @@
    
 </div>
 
-    <!-- 遮罩层 -->
-    <div class="menu-overlay"></div>
-    <!-- 菜单内容 -->
-    <div class="side-menu">
-        <div class="menu-content">
-            <div class="right">
-                <div class="right_1">
-                    <div class="screen">
-                        <li class="name">
-                            ALIYA
-                        </li>
-                        <li class="hrm">
-                            <div id="number" class="heart-number">75</div>
-                            <canvas id="ecgCanvas"></canvas>
-                        </li>
-                        <li class="title">
-                            HEART RATE
-                        </li>
-                    </div>
-                    <div class="chart">
-                        <li>
-                            <div>
-                                <div class="o2"></div>
-                            </div>
-                        </li>
-                        <li>
-                            <div>
-                                <div class="h2o"></div>
-                            </div>
-
-                        </li>
-                        <li>
-                            <div>
-                                <div class="eng"></div>
-                            </div>
-
-                        </li>
-                    </div>
-
-
-                </div>
-                <div class="right_2">
-                    <div class="main">
-                        <div class="hrmb">
-
-                            <div class="bg">
-                                <div class="labels">
-                                    <span class="on-label ">off</span>
-                                    <span class="off-label active">on</span>
-                                </div>
-                                <label class="toggle-switch">
-                                    <input id="hrmbutton" type="checkbox" checked class="toggle-input">
-                                    <span class="slider"></span>
-                                </label>
-
-                            </div>
-                        </div>
-                        <div class="eogb">
-                            <div class="bg">
-                                <div class="labels">
-                                    <span class="on-label active">off</span>
-                                    <span class="off-label ">on</span>
-                                </div>
-                                <label class="toggle-switch">
-                                    <input type="checkbox" id="eogbutton" class="toggle-input">
-                                    <span class="slider"></span>
-                                </label>
-
-                            </div>
-                        </div>
-                        <div class="ehb">
-                            <div class="bg">
-                                <div class="labels">
-                                    <span class="on-label active">off</span>
-                                    <span class="off-label ">on</span>
-                                </div>
-                                <label class="toggle-switch">
-                                    <input type="checkbox" class="toggle-input">
-                                    <span class="slider"></span>
-                                </label>
-
-                            </div>
-                        </div>
-                        <div class="radiob">
-                            <div class="bg">
-                                <div class="labels">
-                                    <span class="on-label active">off</span>
-                                    <span class="off-label ">on</span>
-                                </div>
-                                <label class="toggle-switch">
-                                    <input id="radio-button" type="checkbox" class="toggle-input">
-                                    <span class="slider"></span>
-                                </label>
-
-                            </div>
-                        </div>
-                        <div class="radio">
-
-                            <div class="slider-container">
-                                <img src="img/radio.png" alt="">
-                                <div class="slider-track">
-
-                                    <div class="slider-thumb"></div>
-                                </div>
-                            </div>
-
-
-
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
-
     <div class="op-overlay" id="opOverlay">
         <aside class="op-drawer" id="opPanel" role="dialog" aria-modal="true" aria-labelledby="opTitle">
             <div class="op-drawer-handle" id="opDrawerHandle" aria-hidden="true"><span></span></div>
@@ -298,6 +164,7 @@
 
             <div class="op-drawer-layout">
                 <nav class="op-subnav" id="opSubnav" role="tablist" aria-label="Operation 子页面">
+                    <button type="button" class="op-subnav-btn" data-op-target="status">状态</button>
                     <button type="button" class="op-subnav-btn active" data-op-target="session">会话</button>
                     <button type="button" class="op-subnav-btn" data-op-target="model">模型</button>
                     <button type="button" class="op-subnav-btn" data-op-target="draw">生图</button>
@@ -306,6 +173,7 @@
                     <button type="button" class="op-subnav-btn" data-op-target="worldbook">世界书</button>
                     <button type="button" class="op-subnav-btn" data-op-target="rules">规则</button>
                     <button type="button" class="op-subnav-btn" data-op-target="style">文风</button>
+                    <button type="button" class="op-subnav-btn" data-op-target="settings">设置</button>
                 </nav>
 
                 <div class="op-drawer-body">
@@ -342,54 +210,161 @@
                             <div class="op-caption">开启后，完整回复仍保存为一条消息，但前端会按换行和完整语法结构逐段播放。</div>
                         </section>
                     </div>
+
+                    <div class="op-page op-drawer-session" data-op-page="settings">
+                        <section class="op-section">
+                            <label class="op-label">鉴权 Token</label>
+                            <div class="token-save-row">
+                                <input type="password" id="segToken" class="settings-input" autocomplete="off" spellcheck="false" placeholder="留空保持当前 Token">
+                                <button id="tokenSaveBtn" class="token-save-btn" type="button">保存</button>
+                            </div>
+                            <div class="op-caption">粘贴新 Token 后点击“保存”验证并生效（也可按回车）。</div>
+                        </section>
+
+                        <section class="op-section">
+                            <label class="op-label" for="backgroundMusicSelect">背景音乐</label>
+                            <select id="backgroundMusicSelect" class="settings-input settings-select">
+                                <option value="none">不播放</option>
+                                <option value="letter">Letter</option>
+                                <option value="aliya">Aliya</option>
+                                <option value="drift">Drift</option>
+                                <option value="response">Response</option>
+                                <option value="astral-sunset">Astral Sunset</option>
+                                <option value="stars-annihilation">Stars' Annihilation</option>
+                                <option value="tranquil-repose">Tranquil Repose</option>
+                            </select>
+                            <div class="op-caption">切换后立即生效，选择"不播放"可关闭背景音乐。</div>
+                        </section>
+
+                        <section class="op-section">
+                            <label class="op-label" for="playModeSelect">播放模式</label>
+                            <select id="playModeSelect" class="settings-input settings-select">
+                                <option value="single">单曲循环</option>
+                                <option value="random">随机播放</option>
+                                <option value="list">列表循环</option>
+                            </select>
+                            <div class="op-caption">单曲循环时播放上方选中的曲目；随机播放/列表循环时以全部曲目为播放池。</div>
+                        </section>
+
+                        <div class="op-status" id="settingsStatus"></div>
+                    </div>
+
+                    <div class="op-page op-page-status" data-op-page="status">
+                        <div class="menu-content">
+                            <div class="right">
+                                <div class="right_1">
+                                    <div class="screen">
+                                        <li class="name">
+                                            ALIYA
+                                        </li>
+                                        <li class="hrm">
+                                            <div id="number" class="heart-number">75</div>
+                                            <canvas id="ecgCanvas"></canvas>
+                                        </li>
+                                        <li class="title">
+                                            HEART RATE
+                                        </li>
+                                    </div>
+                                    <div class="chart">
+                                        <li>
+                                            <div>
+                                                <div class="o2"></div>
+                                            </div>
+                                        </li>
+                                        <li>
+                                            <div>
+                                                <div class="h2o"></div>
+                                            </div>
+
+                                        </li>
+                                        <li>
+                                            <div>
+                                                <div class="eng"></div>
+                                            </div>
+
+                                        </li>
+                                    </div>
+
+
+                                </div>
+                                <div class="right_2">
+                                    <div class="main">
+                                        <div class="hrmb">
+
+                                            <div class="bg">
+                                                <div class="labels">
+                                                    <span class="on-label ">off</span>
+                                                    <span class="off-label active">on</span>
+                                                </div>
+                                                <label class="toggle-switch">
+                                                    <input id="hrmbutton" type="checkbox" checked class="toggle-input">
+                                                    <span class="slider"></span>
+                                                </label>
+
+                                            </div>
+                                        </div>
+                                        <div class="eogb">
+                                            <div class="bg">
+                                                <div class="labels">
+                                                    <span class="on-label active">off</span>
+                                                    <span class="off-label ">on</span>
+                                                </div>
+                                                <label class="toggle-switch">
+                                                    <input type="checkbox" id="eogbutton" class="toggle-input">
+                                                    <span class="slider"></span>
+                                                </label>
+
+                                            </div>
+                                        </div>
+                                        <div class="ehb">
+                                            <div class="bg">
+                                                <div class="labels">
+                                                    <span class="on-label active">off</span>
+                                                    <span class="off-label ">on</span>
+                                                </div>
+                                                <label class="toggle-switch">
+                                                    <input type="checkbox" class="toggle-input">
+                                                    <span class="slider"></span>
+                                                </label>
+
+                                            </div>
+                                        </div>
+                                        <div class="radiob">
+                                            <div class="bg">
+                                                <div class="labels">
+                                                    <span class="on-label active">off</span>
+                                                    <span class="off-label ">on</span>
+                                                </div>
+                                                <label class="toggle-switch">
+                                                    <input id="radio-button" type="checkbox" class="toggle-input">
+                                                    <span class="slider"></span>
+                                                </label>
+
+                                            </div>
+                                        </div>
+                                        <div class="radio">
+
+                                            <div class="slider-container">
+                                                <img src="img/radio.png" alt="">
+                                                <div class="slider-track">
+
+                                                    <div class="slider-thumb"></div>
+                                                </div>
+                                            </div>
+
+
+
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </div>
 
             <div class="op-status" id="opStatus"></div>
         </aside>
-    </div>
-
-    <div class="settings-overlay" id="settingsOverlay">
-        <div class="settings-panel" id="settingsPanel">
-            <span class="op-close-btn" id="settingsCloseBtn">&times;</span>
-            <h2 class="op-title">Settings</h2>
-
-            <div class="op-section">
-                <label class="op-label">鉴权 Token</label>
-                <div class="token-save-row">
-                    <input type="password" id="segToken" class="settings-input" autocomplete="off" spellcheck="false" placeholder="留空保持当前 Token">
-                    <button id="tokenSaveBtn" class="token-save-btn" type="button">保存</button>
-                </div>
-                <div class="op-caption">粘贴新 Token 后点击“保存”验证并生效（也可按回车）。</div>
-            </div>
-
-            <div class="op-section">
-                <label class="op-label" for="backgroundMusicSelect">背景音乐</label>
-                <select id="backgroundMusicSelect" class="settings-input settings-select">
-                    <option value="none">不播放</option>
-                    <option value="letter">Letter</option>
-                    <option value="aliya">Aliya</option>
-                    <option value="drift">Drift</option>
-                    <option value="response">Response</option>
-                    <option value="astral-sunset">Astral Sunset</option>
-                    <option value="stars-annihilation">Stars' Annihilation</option>
-                    <option value="tranquil-repose">Tranquil Repose</option>
-                </select>
-                <div class="op-caption">切换后立即生效，选择"不播放"可关闭背景音乐。</div>
-            </div>
-
-            <div class="op-section">
-                <label class="op-label" for="playModeSelect">播放模式</label>
-                <select id="playModeSelect" class="settings-input settings-select">
-                    <option value="single">单曲循环</option>
-                    <option value="random">随机播放</option>
-                    <option value="list">列表循环</option>
-                </select>
-                <div class="op-caption">单曲循环时播放上方选中的曲目；随机播放/列表循环时以全部曲目为播放池。</div>
-            </div>
-
-            <div class="op-status" id="settingsStatus"></div>
-        </div>
     </div>
 
 </body>
