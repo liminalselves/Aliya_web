@@ -2366,7 +2366,7 @@ document.addEventListener("DOMContentLoaded", function (event) {
     var opSessionDeleteBtn = document.getElementById("opSessionDeleteBtn");
     var opSessions = [];
     var opCurrentSessionId = null;
-    var opCurrentPage = "session";
+    var opCurrentPage = "status";
     var opPanelLoadPromise = null;
     var opConfigSaveTimer = null;
     var opConfigSaveInFlight = false;
