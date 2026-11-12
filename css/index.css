@@ -2096,3 +2096,162 @@ body {
 .auth-overlay .auth-status {
     font-size: max(13px, 1.4rem);
 }
+
+/* ==================== PC 端 Operation 弹窗 ====================
+ * chat-ui.css 把 .op-drawer 定义成侧边抽屉（is-mobile 时是手机底部抽屉）。
+ * 本文件只被 index-p.html 加载，这里用 html:not(.is-mobile) 提升优先级，
+ * 把 PC 端恢复成原本的居中弹窗：遮罩居中、圆角卡片、顶部页签网格。
+ */
+html:not(.is-mobile) .op-overlay {
+    display: none;
+    align-items: center;
+    justify-content: center;
+    padding: 3rem;
+    box-sizing: border-box;
+    background: rgba(0, 0, 0, 0.7);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+}
+html:not(.is-mobile) .op-overlay.active {
+    display: flex;
+    animation: ui-fade-in 0.22s ease-out both;
+}
+html:not(.is-mobile) .op-overlay.is-closing {
+    animation: ui-fade-out 0.2s ease-in both;
+}
+html:not(.is-mobile) .op-overlay.active > .op-drawer,
+html:not(.is-mobile) .op-overlay.active.is-open > .op-drawer {
+    position: absolute;
+    inset: 0;
+    width: min(1200px, calc(100vw - 6rem));
+    min-width: 0;
+    max-height: min(720px, calc(100vh - 6rem));
+    margin: auto;
+    overflow: hidden;
+    background: #2d2d2d;
+    border: 1px solid #555;
+    border-right: 1px solid #555;
+    border-radius: 1.2rem;
+    box-shadow: none;
+    color: #efefef;
+    font-size: max(14px, 1.6rem);
+    animation: ui-panel-in 0.28s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+html:not(.is-mobile) .op-overlay.active.is-closing > .op-drawer {
+    animation: ui-panel-out 0.2s ease-in both;
+}
+
+/* 标题居中、关闭按钮吸附右上角，对齐原 .op-panel 布局 */
+html:not(.is-mobile) .op-drawer-header {
+    display: block;
+    flex: none;
+    padding: 2.4rem 3.2rem 0;
+    border-bottom: 0;
+}
+html:not(.is-mobile) .op-drawer .op-title {
+    margin: 0 0 2rem;
+    font-size: max(20px, 2.4rem);
+    font-weight: 600;
+    letter-spacing: normal;
+    text-align: center;
+    color: #efefef;
+}
+html:not(.is-mobile) .op-drawer .op-close-btn {
+    position: absolute;
+    top: 1.5rem;
+    right: 2rem;
+    width: auto;
+    height: auto;
+    display: inline;
+    border-radius: 0;
+    font-size: max(26px, 3rem);
+    line-height: 1;
+    color: #999;
+    background: transparent;
+}
+html:not(.is-mobile) .op-drawer .op-close-btn:hover {
+    background: transparent;
+    color: #fff;
+}
+html:not(.is-mobile) .op-drawer .op-close-btn:active {
+    transform: none;
+}
+
+/* 竖排导航改回弹窗顶部的横向页签网格 */
+html:not(.is-mobile) .op-drawer-layout {
+    flex: 1 1 auto;
+    min-height: 0;
+    flex-direction: column;
+    padding: 0 3.2rem;
+}
+html:not(.is-mobile) .op-drawer .op-subnav {
+    flex: none;
+    width: auto;
+    display: grid;
+    grid-template-columns: repeat(8, minmax(0, 1fr));
+    gap: 0.8rem;
+    margin: 0 0 2rem;
+    padding: 0;
+    border-right: 0;
+    overflow: visible;
+}
+html:not(.is-mobile) .op-drawer .op-subnav-btn {
+    min-height: 3.8rem;
+    padding: 0;
+    border-radius: 0.8rem;
+    background: #555;
+    color: #efefef;
+    font-size: max(12px, 1.35rem);
+    font-weight: 700;
+    text-align: center;
+}
+html:not(.is-mobile) .op-drawer .op-subnav-btn::before {
+    display: none;
+}
+html:not(.is-mobile) .op-drawer .op-subnav-btn:hover {
+    background: #777;
+    color: #efefef;
+}
+html:not(.is-mobile) .op-drawer .op-subnav-btn.active,
+html:not(.is-mobile) .op-drawer .op-subnav-btn.active:hover {
+    background: #e6a15a;
+    color: #2a1d10;
+}
+
+/* 页区：超出弹窗高度时在页区内部滚动 */
+html:not(.is-mobile) .op-drawer-body {
+    flex: 1 1 auto;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    padding-bottom: 2.4rem;
+}
+html:not(.is-mobile) .op-drawer .op-page.active {
+    flex: 1 1 auto;
+    min-height: 0;
+}
+html:not(.is-mobile) .op-drawer .op-drawer-session.active {
+    display: block;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding: 0 0.4rem 0 0;
+}
+html:not(.is-mobile) .op-drawer .op-page-embed.active {
+    padding: 0;
+}
+/* 控制台 iframe 恢复为定高块，不再撑满抽屉正文 */
+html:not(.is-mobile) .op-drawer .op-agent-control {
+    flex: 0 1 auto;
+    height: min(560px, calc(100vh - 24rem));
+    min-height: 160px;
+    border-radius: 0.8rem;
+}
+
+/* 底部状态条去掉抽屉式的分隔线 */
+html:not(.is-mobile) .op-drawer .op-status {
+    flex: none;
+    margin: 0;
+    padding: 0 0 2.4rem;
+    border-top: 0;
+    text-align: center;
+}
