@@ -2168,7 +2168,7 @@ document.addEventListener("DOMContentLoaded", function (event) {
         var item = findTimelineItemByRef(li.getAttribute("data-msg-ref"));
         if (!item) return [];
         var items = [];
-        var copySource = item.content || "";
+        var copySource = window.AliyaMessageRenderer.stripAgentCueTokens(item.content || "");
         if (copySource) {
             items.push({ label: "复制", icon: "⧉", action: function() {
                 ui.copyText(copySource).then(function(ok) { ui.toast(ok ? "已复制" : "复制失败", ok ? null : "error"); });

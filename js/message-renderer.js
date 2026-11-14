@@ -567,9 +567,21 @@
         return out;
     }
 
+    // 展示剥离桌宠表演指令（AI 回复内嵌的 [[agent_cue …]]，仅桌宠客户端解析执行）：
+    // 独占行连同换行移除、行内残留清理、空行收敛。存储原文与编辑视图不受影响。
+    function stripAgentCueTokens(text) {
+        if (!text) return text;
+        if (!/\[\[agent_cue\b[^\]\n]*\]\]/iu.test(text)) return text;
+        return text
+            .replace(/^[ \t]*\[\[agent_cue\b[^\]\n]*\]\][ \t]*\r?\n?/gimu, "")
+            .replace(/\[\[agent_cue\b[^\]\n]*\]\]/giu, "")
+            .replace(/\n{3,}/gu, "\n\n")
+            .trim();
+    }
+
     function splitAssistantMessageIntoSegments(source) {
         if (source === null || source === undefined) return [];
-        var original = String(source);
+        var original = stripAgentCueTokens(String(source));
         var normalized = original.replace(/\r\n?/g, "\n");
         var lines = normalized.split("\n");
         var segments = [];
@@ -698,7 +710,7 @@
     function renderInto(container, source, opts) {
         currentRenderRole = opts && typeof opts.role === "string" ? opts.role : null;
         try {
-            container.innerHTML = renderCached(source);
+            container.innerHTML = renderCached(stripAgentCueTokens(source));
         } finally {
             currentRenderRole = null;
         }
@@ -715,6 +727,7 @@
         renderInto: renderInto,
         renderMarkdown: renderMarkdown,
         renderInline: renderInline,
+        stripAgentCueTokens: stripAgentCueTokens,
         setCustomEmojiMap: setCustomEmojiMap,
         setStickerContext: setStickerContext,
         splitAssistantMessageIntoSegments: splitAssistantMessageIntoSegments,
